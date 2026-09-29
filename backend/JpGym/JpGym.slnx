@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="JpGym.Api/JpGym.Api.csproj" />
+  <Project Path="JpGym.Application/JpGym.Application.csproj" />
+  <Project Path="JpGym.Domain/JpGym.Domain.csproj" />
+  <Project Path="JpGym.Infrastructure/JpGym.Infrastructure.csproj" />
+</Solution>
