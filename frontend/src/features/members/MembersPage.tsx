@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import MemberForm from './MemberForm'
 import type { NewMemberData } from './MemberForm'
+import MemberDetail from './MemberDetail'
 
 type Member = {
   id: number
@@ -46,6 +47,7 @@ export default function MembersPage() {
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null)
 
   const filteredMembers = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -95,6 +97,15 @@ export default function MembersPage() {
     }
 
     return 'bg-zinc-100 text-zinc-600'
+  }
+
+  if (selectedMember) {
+    return (
+      <MemberDetail
+        member={selectedMember}
+        onBack={() => setSelectedMember(null)}
+      />
+    )
   }
 
   return (
@@ -245,6 +256,7 @@ export default function MembersPage() {
                   <td className="px-5 py-4 text-right">
                     <button
                       type="button"
+                      onClick={() => setSelectedMember(member)}
                       className="text-sm font-semibold text-[#E11D2E] hover:underline"
                     >
                       Ver ficha
@@ -267,7 +279,6 @@ export default function MembersPage() {
           </table>
         </div>
 
-        {/* Pie */}
         <div className="border-t border-zinc-100 px-5 py-4 text-xs text-zinc-500">
           Datos de demostración. Los códigos DEMO son temporales hasta conectar la API.
         </div>
