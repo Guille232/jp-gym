@@ -1,35 +1,56 @@
-import './index.css'
+import AppLayout from './components/layout/AppLayout'
 
 function App() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#F5F5F5] p-6 font-sans text-zinc-900 antialiased">
-      <section className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#E11D2E]">
-          Sistema administrativo
+    <AppLayout>
+      <section>
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+          Comunidad JP GYM
         </p>
 
-        <h1 className="mt-3 text-4xl font-extrabold tracking-tight">
-          JP GYM
-        </h1>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
+            Miembros
+          </h1>
 
-        <h2 className="mt-6 text-lg font-semibold">
-          Base del frontend
-        </h2>
-
-        <p className="mt-2 text-sm leading-6 text-zinc-500">
-          Esta pantalla nos permite comprobar los estilos antes de
-          construir el menú y el registro de miembros.
-        </p>
-
-        <div className="mt-6 rounded-xl bg-[#E11D2E] px-4 py-3 text-center text-sm font-semibold text-white">
-          React + TypeScript + Tailwind CSS
+          <span className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-medium text-zinc-500">
+            Vista inicial
+          </span>
         </div>
 
-        <p className="mt-4 text-center text-xs text-zinc-500">
-          Pantalla de prueba · Sin conexión al backend
+        <p className="mt-3 text-sm leading-6 text-zinc-500">
+          Administra la información de los miembros de JP GYM desde un
+          solo lugar.
         </p>
+
+        <div className="mt-7 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+          <div className="border-b border-zinc-100 px-6 py-4">
+            <h2 className="text-sm font-semibold text-zinc-800">
+              Registro y consulta de miembros
+            </h2>
+          </div>
+
+          <div className="px-6 py-12 text-center sm:py-16">
+            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-red-50 text-lg font-extrabold text-[#E11D2E]">
+              JP
+            </div>
+
+            <h3 className="mt-5 text-lg font-semibold">
+              Módulo de miembros
+            </h3>
+
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-zinc-500">
+              En el próximo paso agregaremos el listado de miembros,
+              el buscador y el formulario para registrar nuevos socios.
+            </p>
+
+            <p className="mt-6 text-xs text-zinc-400">
+              Esta pantalla todavía no guarda ni consulta información.
+            </p>
+          </div>
+        </div>
       </section>
-    </main>
+    </AppLayout>
   )
 }
 
