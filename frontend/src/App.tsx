@@ -1,55 +1,134 @@
+import { useState } from 'react'
+
 import AppLayout from './components/layout/AppLayout'
 
+import type { AppPage } from './components/layout/Sidebar'
+
+import LoginPage from './features/auth/LoginPage'
+
+import type {
+  AuthUser,
+} from './features/auth/LoginPage'
+
+import DashboardPage from './features/dashboard/DashboardPage'
+import MembersPage from './features/members/MembersPage'
+import MembershipsPage from './features/memberships/MembershipsPage'
+import CheckInPage from './features/checkin/CheckInPage'
+import AttendancePage from './features/attendance/AttendancePage'
+import PaymentsPage from './features/payments/PaymentsPage'
+import DailyEntriesPage from './features/dailyEntries/DailyEntriesPage'
+import ExpensesPage from './features/expenses/ExpensesPage'
+import EmployeesPage from './features/employees/EmployeesPage'
+import TrainersPage from './features/trainers/TrainersPage'
+import ClassesPage from './features/classes/ClassesPage'
+import AnalyticsPage from './features/analytics/AnalyticsPage'
+
 function App() {
+  const [user, setUser] =
+    useState<AuthUser | null>(null)
+
+  const [activePage, setActivePage] =
+    useState<AppPage>('dashboard')
+
+  function handleLogin(
+    authenticatedUser: AuthUser,
+  ) {
+    setUser(authenticatedUser)
+    setActivePage('dashboard')
+  }
+
+  function handleLogout() {
+    setUser(null)
+    setActivePage('dashboard')
+  }
+
+  function handleNavigate(
+    page: AppPage,
+  ) {
+    if (!user) {
+      return
+    }
+
+    const adminOnlyPages: AppPage[] = [
+      'expenses',
+      'employees',
+      'trainers',
+      'classes',
+      'analytics',
+    ]
+
+    if (
+      user.role !== 'Administrador' &&
+      adminOnlyPages.includes(page)
+    ) {
+      return
+    }
+
+    setActivePage(page)
+  }
+
+  if (!user) {
+    return (
+      <LoginPage
+        onLogin={handleLogin}
+      />
+    )
+  }
+
   return (
-    <AppLayout>
-      <section>
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-          Comunidad JP GYM
-        </p>
+    <AppLayout
+      activePage={activePage}
+      onNavigate={handleNavigate}
+      user={user}
+      onLogout={handleLogout}
+    >
+      {activePage === 'dashboard' && (
+        <DashboardPage />
+      )}
 
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
-            Miembros
-          </h1>
+      {activePage === 'members' && (
+        <MembersPage />
+      )}
 
-          <span className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[10px] font-medium text-zinc-500">
-            Vista inicial
-          </span>
-        </div>
+      {activePage === 'memberships' && (
+        <MembershipsPage />
+      )}
 
-        <p className="mt-3 text-sm leading-6 text-zinc-500">
-          Administra la información de los miembros de JP GYM desde un
-          solo lugar.
-        </p>
+      {activePage === 'checkin' && (
+        <CheckInPage />
+      )}
 
-        <div className="mt-7 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="border-b border-zinc-100 px-6 py-4">
-            <h2 className="text-sm font-semibold text-zinc-800">
-              Registro y consulta de miembros
-            </h2>
-          </div>
+      {activePage === 'attendance' && (
+        <AttendancePage />
+      )}
 
-          <div className="px-6 py-12 text-center sm:py-16">
-            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-red-50 text-lg font-extrabold text-[#E11D2E]">
-              JP
-            </div>
+      {activePage === 'payments' && (
+        <PaymentsPage />
+      )}
 
-            <h3 className="mt-5 text-lg font-semibold">
-              Módulo de miembros
-            </h3>
+      {activePage === 'dailyEntries' && (
+        <DailyEntriesPage />
+      )}
 
-            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-zinc-500">
-              En el próximo paso agregaremos el listado de miembros,
-              el buscador y el formulario para registrar nuevos socios.
-            </p>
+      {activePage === 'expenses' && (
+        <ExpensesPage />
+      )}
 
-            <p className="mt-6 text-xs text-zinc-400">
-              Esta pantalla todavía no guarda ni consulta información.
-            </p>
-          </div>
-        </div>
-      </section>
+      {activePage === 'employees' && (
+        <EmployeesPage />
+      )}
+
+      {activePage === 'trainers' && (
+        <TrainersPage />
+      )}
+
+      {activePage === 'classes' && (
+        <ClassesPage />
+      )}
+
+      {activePage === 'analytics' && (
+        <AnalyticsPage />
+      )}
     </AppLayout>
   )
 }
