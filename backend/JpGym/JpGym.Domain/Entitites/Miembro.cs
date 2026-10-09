@@ -6,10 +6,12 @@ public class Miembro
     public string CodigoBarras { get; set; } = string.Empty;
     public string NombreCompleto { get; set; } = string.Empty;
     public string Telefono { get; set; } = string.Empty;
-    public string NumeroDocumento { get; set; } = string.Empty;
+    public string? NumeroDocumento { get; set; }
     public int EdadAlRegistrarse { get; set; }
     public DateTimeOffset FechaRegistro { get; set; } = DateTimeOffset.UtcNow;
     public bool Activo { get; set; } = true;
+
+    public string? Direccion { get; set; }
 
     public bool EraMenorAlRegistrarse => EdadAlRegistrarse < 18;
 }
