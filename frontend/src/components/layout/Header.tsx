@@ -49,6 +49,10 @@ const pageTitles: Record<
     title: 'Gastos',
     section: 'Negocio',
   },
+  dailyClose: {
+    title: 'Corte diario',
+    section: 'Caja',
+  },
   employees: {
     title: 'Empleados',
     section: 'Personal',

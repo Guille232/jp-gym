@@ -1,3 +1,5 @@
+import MemberQrCode from './MemberQrCode'
+
 export type ReceiptData = {
   receiptNumber: string
   memberName: string
@@ -34,7 +36,6 @@ export default function PaymentReceipt({
 
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
-      {/* Encabezado de la pantalla */}
       <div className="flex flex-col gap-4 border-b border-zinc-100 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-widest text-[#E11D2E]">
@@ -61,12 +62,11 @@ export default function PaymentReceipt({
       </div>
 
       <div className="p-5 sm:p-6">
-        {/* FACTURA */}
         <div
           id="payment-receipt"
           className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm"
         >
-          {/* Cabecera factura */}
+          {/* Cabecera */}
           <div className="bg-[#0D0D0D] p-6 text-white sm:p-8">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
@@ -104,7 +104,7 @@ export default function PaymentReceipt({
           </div>
 
           <div className="p-6 sm:p-8">
-            {/* Información principal */}
+            {/* Miembro */}
             <div className="grid grid-cols-1 gap-6 border-b border-zinc-100 pb-6 sm:grid-cols-2">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
@@ -139,7 +139,7 @@ export default function PaymentReceipt({
               </div>
             </div>
 
-            {/* Conceptos */}
+            {/* Detalle */}
             <div className="mt-7">
               <h3 className="text-sm font-bold text-zinc-900">
                 Detalle de la factura
@@ -213,8 +213,38 @@ export default function PaymentReceipt({
               />
             </div>
 
-            {/* Totales */}
-            <div className="mt-7 flex justify-end">
+            {/* QR */}
+            <div className="mt-7 border-t border-zinc-100 pt-7">
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-[1fr_auto] md:items-center">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                    Acceso del miembro
+                  </p>
+
+                  <h3 className="mt-2 text-lg font-bold text-zinc-900">
+                    Código QR
+                  </h3>
+
+                  <p className="mt-2 max-w-md text-sm leading-6 text-zinc-500">
+                    Este QR identifica al miembro en JP GYM. Puede presentarlo
+                    para consultar su acceso y registrar su entrada.
+                  </p>
+
+                  <p className="mt-3 text-xs font-semibold text-zinc-700">
+                    Código asociado: {receipt.memberCode}
+                  </p>
+                </div>
+
+                <MemberQrCode
+                  code={receipt.memberCode}
+                  size={145}
+                  compact
+                />
+              </div>
+            </div>
+
+            {/* Total */}
+            <div className="mt-7 flex justify-end border-t border-zinc-100 pt-6">
               <div className="w-full max-w-sm">
                 <div className="flex items-center justify-between border-b border-zinc-100 py-3">
                   <span className="text-sm text-zinc-500">
@@ -259,7 +289,8 @@ export default function PaymentReceipt({
               </p>
 
               <p className="mt-2 text-xs leading-5 text-zinc-500">
-                Conserva esta factura como comprobante de tu pago.
+                Conserva esta factura y tu código QR para identificarte en el
+                gimnasio.
               </p>
 
               <p className="mt-2 text-[10px] leading-5 text-zinc-400">
@@ -269,7 +300,7 @@ export default function PaymentReceipt({
           </div>
         </div>
 
-        {/* Botones */}
+        {/* Acciones */}
         <div className="mx-auto mt-6 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <button
             type="button"
@@ -306,15 +337,14 @@ export default function PaymentReceipt({
           </button>
         </div>
 
-        {/* Backend */}
         <div className="mx-auto mt-4 max-w-3xl rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
           <p className="text-xs font-semibold text-amber-900">
             Integración pendiente
           </p>
 
           <p className="mt-1 text-xs leading-5 text-amber-800">
-            Cuando Guillermo termine factura, PDF y Excel, estos botones se
-            conectarán al documento definitivo generado por el backend.
+            PDF, Excel y factura definitiva se conectarán con el backend de
+            Guillermo. El PDF deberá incluir este mismo QR del miembro.
           </p>
         </div>
       </div>

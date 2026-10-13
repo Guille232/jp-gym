@@ -3,6 +3,7 @@ import { useState } from 'react'
 import MemberEditForm from './MemberEditForm'
 import MembershipForm from './MembershipForm'
 import PaymentReceipt from './PaymentReceipt'
+import MemberQrCode from './MemberQrCode'
 
 import type {
   MemberEditData,
@@ -66,6 +67,9 @@ export default function MemberDetail({
     >(null)
 
   const [showDelete, setShowDelete] =
+    useState(false)
+
+  const [showQr, setShowQr] =
     useState(false)
 
   const [receipt, setReceipt] =
@@ -171,7 +175,6 @@ export default function MemberDetail({
 
   return (
     <section>
-      {/* Volver */}
       <button
         type="button"
         onClick={onBack}
@@ -180,7 +183,7 @@ export default function MemberDetail({
         ← Volver a miembros
       </button>
 
-      {/* Encabezado */}
+      {/* Perfil */}
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-4">
@@ -220,6 +223,21 @@ export default function MemberDetail({
             <button
               type="button"
               onClick={() =>
+                setShowQr(
+                  (current) =>
+                    !current,
+                )
+              }
+              className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+            >
+              {showQr
+                ? 'Ocultar QR'
+                : 'Ver QR'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
                 setEditing(true)
               }
               className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
@@ -239,7 +257,6 @@ export default function MemberDetail({
           </div>
         </div>
 
-        {/* Datos */}
         <div className="grid grid-cols-1 gap-px border-t border-zinc-100 bg-zinc-100 sm:grid-cols-2 lg:grid-cols-4">
           <MemberInfo
             label="Teléfono"
@@ -269,7 +286,47 @@ export default function MemberDetail({
         </div>
       </div>
 
-      {/* Confirmación eliminar */}
+      {/* QR */}
+      {showQr && (
+        <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-[#E11D2E]">
+                Identificación
+              </p>
+
+              <h2 className="mt-2 text-xl font-bold text-zinc-900">
+                QR del miembro
+              </h2>
+
+              <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">
+                Este QR contiene el código permanente del miembro. Puede
+                escanearse directamente en Check-in para consultar su acceso.
+              </p>
+
+              <div className="mt-4 rounded-xl bg-zinc-50 p-4">
+                <p className="text-xs text-zinc-500">
+                  Código contenido en el QR
+                </p>
+
+                <p className="mt-1 font-mono text-lg font-bold tracking-wider text-zinc-900">
+                  {member.code}
+                </p>
+              </div>
+            </div>
+
+            <MemberQrCode
+              code={member.code}
+              memberName={
+                member.name
+              }
+              size={170}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Eliminar */}
       {showDelete && (
         <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-5">
           <h2 className="font-semibold text-red-700">
@@ -501,10 +558,6 @@ export default function MemberDetail({
           </table>
         </div>
       </div>
-
-      <p className="mt-5 text-xs text-zinc-400">
-        El PDF definitivo y su descarga están pendientes de conexión con el backend.
-      </p>
     </section>
   )
 }

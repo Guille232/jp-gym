@@ -1,11 +1,9 @@
 import { useState } from 'react'
 
 import AppLayout from './components/layout/AppLayout'
-
 import type { AppPage } from './components/layout/Sidebar'
 
 import LoginPage from './features/auth/LoginPage'
-
 import type {
   AuthUser,
 } from './features/auth/LoginPage'
@@ -18,6 +16,7 @@ import AttendancePage from './features/attendance/AttendancePage'
 import PaymentsPage from './features/payments/PaymentsPage'
 import DailyEntriesPage from './features/dailyEntries/DailyEntriesPage'
 import ExpensesPage from './features/expenses/ExpensesPage'
+import DailyClosePage from './features/dailyClose/DailyClosePage'
 import EmployeesPage from './features/employees/EmployeesPage'
 import TrainersPage from './features/trainers/TrainersPage'
 import ClassesPage from './features/classes/ClassesPage'
@@ -51,6 +50,7 @@ function App() {
 
     const adminOnlyPages: AppPage[] = [
       'expenses',
+      'dailyClose',
       'employees',
       'trainers',
       'classes',
@@ -112,6 +112,10 @@ function App() {
 
       {activePage === 'expenses' && (
         <ExpensesPage />
+      )}
+
+      {activePage === 'dailyClose' && (
+        <DailyClosePage />
       )}
 
       {activePage === 'employees' && (
