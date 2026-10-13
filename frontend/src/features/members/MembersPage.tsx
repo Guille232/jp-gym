@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 
 import MemberForm from './MemberForm'
 import MemberDetail from './MemberDetail'
+import MemberExcelPanel from './MemberExcelPanel'
 
 import type {
   NewMemberData,
@@ -180,6 +181,11 @@ export default function MembersPage() {
 
   const [showForm, setShowForm] =
     useState(false)
+
+  const [excelMode, setExcelMode] =
+    useState<
+      'import' | 'export' | null
+    >(null)
 
   const [
     selectedMemberId,
@@ -505,6 +511,18 @@ export default function MembersPage() {
     )
   }
 
+  if (excelMode) {
+    return (
+      <MemberExcelPanel
+        mode={excelMode}
+        members={members}
+        onClose={() =>
+          setExcelMode(null)
+        }
+      />
+    )
+  }
+
   return (
     <section>
       {/* Encabezado */}
@@ -523,15 +541,41 @@ export default function MembersPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() =>
-            setShowForm(true)
-          }
-          className="h-11 rounded-xl bg-[#E11D2E] px-5 text-sm font-semibold text-white transition hover:bg-[#C91828]"
-        >
-          + Nuevo miembro
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={() =>
+              setExcelMode(
+                'import',
+              )
+            }
+            className="h-11 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+          >
+            Importar Excel
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setExcelMode(
+                'export',
+              )
+            }
+            className="h-11 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+          >
+            Exportar Excel
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setShowForm(true)
+            }
+            className="h-11 rounded-xl bg-[#E11D2E] px-5 text-sm font-semibold text-white transition hover:bg-[#C91828]"
+          >
+            + Nuevo miembro
+          </button>
+        </div>
       </div>
 
       {/* Mensualidad */}
@@ -719,23 +763,16 @@ export default function MembersPage() {
 
                     <td className="px-5 py-4">
                       <p className="font-semibold text-zinc-900">
-                        {
-                          member.name
-                        }
+                        {member.name}
                       </p>
 
                       <p className="mt-1 text-xs text-zinc-400">
-                        {
-                          member.age
-                        }{' '}
-                        años
+                        {member.age} años
                       </p>
                     </td>
 
                     <td className="px-5 py-4 text-zinc-600">
-                      {
-                        member.phone
-                      }
+                      {member.phone}
                     </td>
 
                     <td className="px-5 py-4">
