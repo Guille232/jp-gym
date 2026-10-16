@@ -2,6 +2,7 @@ using JpGym.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using JpGym.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using JpGym.Domain.Enums;
 
 namespace JpGym.Infrastructure.Persistence;
 
@@ -31,6 +32,8 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
     public DbSet<Entrenador> Entrenadores => Set<Entrenador>();
 
     public DbSet<ClaseGym> ClasesGym => Set<ClaseGym>();
+
+    public DbSet<CorteDiario> CortesDiarios => Set<CorteDiario>();
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -80,6 +83,22 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
             entity.ToTable(t => t.HasCheckConstraint(
                 "CK_Miembros_Edad",
                 "[EdadAlRegistrarse] BETWEEN 0 AND 120"));
+
+            entity.Property(miembro => miembro.IdSistemaAnterior)
+                .HasMaxLength(50)
+                .IsRequired(false);
+
+            entity.HasIndex(miembro => miembro.IdSistemaAnterior)
+                .IsUnique()
+                .HasFilter("[IdSistemaAnterior] IS NOT NULL");
+
+            entity.Property(miembro => miembro.Email)
+                .HasMaxLength(254)
+                .IsRequired(false);
+
+            entity.Property(miembro => miembro.Notas)
+                .HasMaxLength(1000)
+                .IsRequired(false);
         });
 
         modelBuilder.Entity<PlanMembresia>(entity =>
@@ -131,6 +150,11 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
                 table.HasCheckConstraint(
                     "CK_Membresias_Fechas",
                     "[FechaFinExclusiva] > [FechaInicio]");
+
+                table.HasCheckConstraint(
+                   "CK_Membresias_Origen",
+                   "[Origen] IN (1, 2)");
+
             });
 
 
@@ -173,6 +197,10 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
                 .WithMany()
                 .HasForeignKey(membresia => membresia.PlanMembresiaId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.Property(membresia => membresia.Origen)
+                    .HasConversion<int>()
+                    .HasDefaultValue(JpGym.Domain.Enums.OrigenMembresia.Sistema);
 
         });
 
@@ -415,6 +443,99 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<CorteDiario>(entity =>
+        {
+            entity.ToTable("CortesDiarios", tabla =>
+            {
+                tabla.HasCheckConstraint(
+                    "CK_CortesDiarios_Montos",
+                    "[FondoInicial] >= 0 "
+                    + "AND [IngresosMembresias] >= 0 "
+                    + "AND [IngresosEntradasDiarias] >= 0 "
+                    + "AND [CobrosEfectivo] >= 0 "
+                    + "AND [CobrosTarjeta] >= 0 "
+                    + "AND [CobrosTransferencia] >= 0 "
+                    + "AND [GastosEfectivo] >= 0 "
+                    + "AND [GastosTarjeta] >= 0 "
+                    + "AND [GastosTransferencia] >= 0 "
+                    + "AND [SalidasDeCaja] >= 0 "
+                    + "AND [EfectivoContado] >= 0");
+
+                tabla.HasCheckConstraint(
+                    "CK_CortesDiarios_Salidas",
+                    "[SalidasDeCaja] <= [GastosEfectivo]");
+
+                tabla.HasCheckConstraint(
+                    "CK_CortesDiarios_EfectivoEsperado",
+                    "[EfectivoEsperado] = "
+                    + "[FondoInicial] + [CobrosEfectivo] - [SalidasDeCaja]");
+
+                tabla.HasCheckConstraint(
+                    "CK_CortesDiarios_Diferencia",
+                    "[Diferencia] = [EfectivoContado] - [EfectivoEsperado]");
+            });
+
+            entity.HasKey(corte => corte.Id);
+
+            entity.Property(corte => corte.FechaOperacion)
+                .HasColumnType("date");
+
+            entity.HasIndex(corte => corte.FechaOperacion)
+                .IsUnique();
+
+            entity.Property(corte => corte.FondoInicial)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.IngresosMembresias)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.IngresosEntradasDiarias)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.CobrosEfectivo)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.CobrosTarjeta)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.CobrosTransferencia)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.GastosEfectivo)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.GastosTarjeta)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.GastosTransferencia)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.SalidasDeCaja)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.EfectivoEsperado)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.EfectivoContado)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.Diferencia)
+                .HasPrecision(18, 2);
+
+            entity.Property(corte => corte.CerradoPorUsuarioId)
+                .HasMaxLength(450)
+                .IsRequired();
+
+            entity.Property(corte => corte.Observacion)
+                .HasMaxLength(1000)
+                .IsRequired(false);
+
+            entity.HasOne<UsuarioAplicacion>()
+                .WithMany()
+                .HasForeignKey(corte => corte.CerradoPorUsuarioId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
 
 
         modelBuilder.Entity<Entrenador>(entity =>
@@ -475,6 +596,7 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
             });
         });
     }
+
 
 
 }

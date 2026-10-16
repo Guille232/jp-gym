@@ -18,6 +18,9 @@ using JpGym.Application.Gastos;
 using JpGym.Application.Comprobantes;
 using JpGym.Application.Entrenadores;
 using JpGym.Application.Clases;
+using JpGym.Application.Importaciones;
+using JpGym.Application.Exportaciones;
+using JpGym.Application.CortesDiarios;
 
 namespace JpGym.Infrastructure;
 
@@ -83,6 +86,20 @@ public static class DependencyInjection
         services.AddScoped<IEntrenadorRepository, EntrenadorRepository>();
 
         services.AddScoped<IClaseRepository, ClaseRepository>();
+
+        services.AddScoped<ILectorExcelMiembros, LectorExcelMiembros>();
+
+        services.AddScoped<
+    IExportacionMiembrosRepository,
+    ExportacionMiembrosRepository>();
+
+        services.AddScoped<
+    IGeneradorExcelMiembros,
+    GeneradorExcelMiembros>();
+
+        services.AddScoped<IGeneradorQrMiembro, GeneradorQrMiembro>();
+
+        services.AddScoped<ICorteDiarioRepository, CorteDiarioRepository>();
 
         return services;
     }

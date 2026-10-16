@@ -1,11 +1,12 @@
 using System.ComponentModel.DataAnnotations;
 using JpGym.Application.Abstracciones;
+using JpGym.Application.Comprobantes;
+using JpGym.Application.CortesDiarios;
 using JpGym.Application.Miembros;
 using JpGym.Application.Planes;
+using JpGym.Application.Usuarios;
 using JpGym.Domain.Entities;
 using JpGym.Domain.Enums;
-using JpGym.Application.Comprobantes;
-using JpGym.Application.Usuarios;
 
 namespace JpGym.Application.Membresias;
 
@@ -16,20 +17,21 @@ public class ContratarMembresia
     private readonly IMembresiaRepository _membresias;
     private readonly IRelojGym _reloj;
     private readonly ITransaccionGym _transaccion;
-
     private readonly IComprobanteRepository _comprobantes;
     private readonly IUsuarioService _usuarios;
     private readonly DatosGymComprobante _datosGym;
+    private readonly ValidarDiaAbierto _validarDiaAbierto;
 
     public ContratarMembresia(
-    IMiembroRepository miembros,
-    IPlanRepository planes,
-    IMembresiaRepository membresias,
-    IRelojGym reloj,
-    ITransaccionGym transaccion,
-    IComprobanteRepository comprobantes,
-    IUsuarioService usuarios,
-    DatosGymComprobante datosGym)
+        IMiembroRepository miembros,
+        IPlanRepository planes,
+        IMembresiaRepository membresias,
+        IRelojGym reloj,
+        ITransaccionGym transaccion,
+        IComprobanteRepository comprobantes,
+        IUsuarioService usuarios,
+        DatosGymComprobante datosGym,
+        ValidarDiaAbierto validarDiaAbierto)
     {
         _miembros = miembros;
         _planes = planes;
@@ -39,6 +41,7 @@ public class ContratarMembresia
         _comprobantes = comprobantes;
         _usuarios = usuarios;
         _datosGym = datosGym;
+        _validarDiaAbierto = validarDiaAbierto;
     }
 
     public async Task<MembresiaResponse> EjecutarAsync(
@@ -54,7 +57,6 @@ public class ContratarMembresia
             PlanMembresiaId = request.PlanMembresiaId,
             PrecioAcordado = request.PrecioAcordado,
             Metodo = request.Metodo,
-
             MotivoCambioPrecio =
                 string.IsNullOrWhiteSpace(request.MotivoCambioPrecio)
                     ? null
@@ -95,6 +97,13 @@ public class ContratarMembresia
         return await _transaccion.EjecutarAsync(
             async token =>
             {
+                var ahoraUtc = _reloj.AhoraUtc;
+                var hoy = _reloj.ObtenerFechaLocal(ahoraUtc);
+
+                await _validarDiaAbierto.EjecutarAsync(
+                    hoy,
+                    token);
+
                 var miembro = await _miembros.ObtenerPorIdAsync(
                     miembroId,
                     token);
@@ -146,9 +155,6 @@ public class ContratarMembresia
                         miembroId,
                         token);
 
-                var ahoraUtc = _reloj.AhoraUtc;
-                var hoy = _reloj.ObtenerFechaLocal(ahoraUtc);
-
                 var fechaInicio =
                     ultimaFechaFin.HasValue
                     && ultimaFechaFin.Value > hoy
@@ -172,7 +178,8 @@ public class ContratarMembresia
                     UnidadDuracionContratada = plan.UnidadDuracion,
                     FechaInicio = fechaInicio,
                     FechaFinExclusiva = fechaFin,
-                    FechaRegistro = ahoraUtc
+                    FechaRegistro = ahoraUtc,
+                    Origen = OrigenMembresia.Sistema
                 };
 
                 var pago = new Pago
@@ -192,26 +199,30 @@ public class ContratarMembresia
                 ComprobanteMembresia? comprobante = null;
 
                 var esMensual =
-                    membresia.UnidadDuracionContratada == UnidadDuracion.Meses
+                    membresia.UnidadDuracionContratada
+                        == UnidadDuracion.Meses
                     && membresia.DuracionContratada == 1;
 
                 if (esMensual)
                 {
-                    var nombreUsuario = await _usuarios.ObtenerNombrePorIdAsync(
-                        usuarioId,
-                        token);
+                    var nombreUsuario =
+                        await _usuarios.ObtenerNombrePorIdAsync(
+                            usuarioId,
+                            token);
 
                     if (string.IsNullOrWhiteSpace(nombreUsuario))
                     {
                         throw new InvalidOperationException(
-                            "No se pudo obtener el nombre del usuario que registra el cobro.");
+                            "No se pudo obtener el nombre del usuario "
+                            + "que registra el cobro.");
                     }
 
                     if (string.IsNullOrWhiteSpace(_datosGym.Nombre)
                         || _datosGym.Nombre.Trim().Length > 150)
                     {
                         throw new InvalidOperationException(
-                            "El nombre del gimnasio no está configurado correctamente.");
+                            "El nombre del gimnasio no está "
+                            + "configurado correctamente.");
                     }
 
                     comprobante = new ComprobanteMembresia
@@ -258,6 +269,7 @@ public class ContratarMembresia
                     FechaPago = pago.FechaRegistro,
                     ComprobanteId = comprobante?.Id,
                     NumeroComprobante = comprobante?.Numero,
+                    Origen = membresia.Origen
                 };
             },
             cancellationToken);
@@ -285,7 +297,8 @@ public class ContratarMembresia
         catch (ArgumentOutOfRangeException)
         {
             throw new ValidationException(
-                "La duración del plan supera el rango de fechas permitido.");
+                "La duración del plan supera el rango "
+                + "de fechas permitido.");
         }
     }
 }

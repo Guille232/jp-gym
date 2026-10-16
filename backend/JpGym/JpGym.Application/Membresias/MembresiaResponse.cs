@@ -33,15 +33,17 @@ public class MembresiaResponse
 
     public DateTimeOffset FechaRegistro { get; set; }
 
-    public Guid PagoId { get; set; }
+    public Guid? PagoId { get; set; }
 
-    public decimal MontoPagado { get; set; }
+    public decimal? MontoPagado { get; set; }
 
-    public MetodoPago Metodo { get; set; }
+    public MetodoPago? Metodo { get; set; }
 
-    public DateTimeOffset FechaPago { get; set; }
+    public DateTimeOffset? FechaPago { get; set; }
 
     public Guid? ComprobanteId { get; set; }
 
     public string? NumeroComprobante { get; set; }
+
+    public OrigenMembresia Origen { get; set; }
 }

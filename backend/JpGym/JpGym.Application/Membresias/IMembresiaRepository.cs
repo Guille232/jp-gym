@@ -23,4 +23,9 @@ public interface IMembresiaRepository
     Guid miembroId,
     DateOnly fecha,
     CancellationToken cancellationToken = default);
+
+    Task AgregarImportadaAsync(
+    Membresia membresia,
+    CancellationToken cancellationToken = default);
+
 }

@@ -10,8 +10,10 @@ public class Miembro
     public int EdadAlRegistrarse { get; set; }
     public DateTimeOffset FechaRegistro { get; set; } = DateTimeOffset.UtcNow;
     public bool Activo { get; set; } = true;
-
     public string? Direccion { get; set; }
 
     public bool EraMenorAlRegistrarse => EdadAlRegistrarse < 18;
+    public string? IdSistemaAnterior { get; set; }
+    public string? Email { get; set; }
+    public string? Notas { get; set; }
 }

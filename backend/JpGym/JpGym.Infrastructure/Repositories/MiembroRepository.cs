@@ -3,6 +3,7 @@ using JpGym.Domain.Entities;
 using JpGym.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
+using JpGym.Application.Importaciones;
 
 namespace JpGym.Infrastructure.Repositories;
 
@@ -206,5 +207,135 @@ public class MiembroRepository : IMiembroRepository
 
             return ResultadoEliminarMiembro.TieneHistorial;
         }
+    }
+
+    public async Task<IReadOnlyList<string>>
+    ObtenerIdsSistemaAnteriorExistentesAsync(
+        IReadOnlyCollection<string> ids,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+
+        var idsNormalizados = ids
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (idsNormalizados.Length == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var existentes = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        // Consultamos por lotes para no enviar todos los IDs
+        // en una única consulta.
+        foreach (var lote in idsNormalizados.Chunk(500))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var encontrados = await _context.Miembros
+                .AsNoTracking()
+                .Where(miembro =>
+                    miembro.IdSistemaAnterior != null
+                    && lote.Contains(
+                        miembro.IdSistemaAnterior.Trim().ToUpper()))
+                .Select(miembro => miembro.IdSistemaAnterior!)
+                .ToListAsync(cancellationToken);
+
+            foreach (var id in encontrados)
+            {
+                existentes.Add(id.Trim());
+            }
+        }
+
+        return existentes.ToArray();
+    }
+
+    public async Task<IReadOnlyList<MiembroCoincidenciaImportacion>>
+    BuscarCoincidenciasImportacionAsync(
+        IReadOnlyCollection<string> documentos,
+        IReadOnlyCollection<string> telefonos,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(documentos);
+        ArgumentNullException.ThrowIfNull(telefonos);
+
+        var documentosNormalizados = documentos
+            .Where(valor => !string.IsNullOrWhiteSpace(valor))
+            .Select(valor => valor.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var telefonosNormalizados = telefonos
+            .Where(valor => !string.IsNullOrWhiteSpace(valor))
+            .Select(valor => valor.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var encontrados =
+            new Dictionary<Guid, MiembroCoincidenciaImportacion>();
+
+        var cantidadLotes = Math.Max(
+            (documentosNormalizados.Length + 249) / 250,
+            (telefonosNormalizados.Length + 249) / 250);
+
+        for (var indice = 0; indice < cantidadLotes; indice++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var loteDocumentos = documentosNormalizados
+                .Skip(indice * 250)
+                .Take(250)
+                .ToArray();
+
+            var loteTelefonos = telefonosNormalizados
+                .Skip(indice * 250)
+                .Take(250)
+                .ToArray();
+
+            var consulta = _context.Miembros.AsNoTracking();
+
+            if (loteDocumentos.Length > 0
+                && loteTelefonos.Length > 0)
+            {
+                consulta = consulta.Where(miembro =>
+                    (miembro.NumeroDocumento != null
+                     && loteDocumentos.Contains(
+                         miembro.NumeroDocumento.Trim().ToUpper()))
+                    || loteTelefonos.Contains(miembro.Telefono.Trim()));
+            }
+            else if (loteDocumentos.Length > 0)
+            {
+                consulta = consulta.Where(miembro =>
+                    miembro.NumeroDocumento != null
+                    && loteDocumentos.Contains(
+                        miembro.NumeroDocumento.Trim().ToUpper()));
+            }
+            else
+            {
+                consulta = consulta.Where(miembro =>
+                    loteTelefonos.Contains(miembro.Telefono.Trim()));
+            }
+
+            var coincidencias = await consulta
+                .Select(miembro => new MiembroCoincidenciaImportacion
+                {
+                    Id = miembro.Id,
+                    NombreCompleto = miembro.NombreCompleto,
+                    Telefono = miembro.Telefono,
+                    NumeroDocumento = miembro.NumeroDocumento
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var coincidencia in coincidencias)
+            {
+                encontrados.TryAdd(coincidencia.Id, coincidencia);
+            }
+        }
+
+        return encontrados.Values.ToArray();
     }
 }

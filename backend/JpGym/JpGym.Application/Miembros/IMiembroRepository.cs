@@ -1,5 +1,6 @@
 using JpGym.Application.Membresias;
 using JpGym.Domain.Entities;
+using JpGym.Application.Importaciones;
 
 namespace JpGym.Application.Miembros;
 
@@ -35,5 +36,13 @@ public interface IMiembroRepository
     Guid id,
     CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<string>> ObtenerIdsSistemaAnteriorExistentesAsync(
+    IReadOnlyCollection<string> ids,
+    CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<MiembroCoincidenciaImportacion>>
+    BuscarCoincidenciasImportacionAsync(
+        IReadOnlyCollection<string> documentos,
+        IReadOnlyCollection<string> telefonos,
+        CancellationToken cancellationToken = default);
 }

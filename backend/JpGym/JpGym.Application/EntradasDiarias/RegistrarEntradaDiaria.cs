@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using JpGym.Application.Abstracciones;
+using JpGym.Application.CortesDiarios;
 using JpGym.Domain.Entities;
 
 namespace JpGym.Application.EntradasDiarias;
@@ -8,13 +9,19 @@ public class RegistrarEntradaDiaria
 {
     private readonly IEntradaDiariaRepository _repository;
     private readonly IRelojGym _reloj;
+    private readonly ValidarDiaAbierto _validarDiaAbierto;
+    private readonly ITransaccionGym _transaccion;
 
     public RegistrarEntradaDiaria(
         IEntradaDiariaRepository repository,
-        IRelojGym reloj)
+        IRelojGym reloj,
+        ValidarDiaAbierto validarDiaAbierto,
+        ITransaccionGym transaccion)
     {
         _repository = repository;
         _reloj = reloj;
+        _validarDiaAbierto = validarDiaAbierto;
+        _transaccion = transaccion;
     }
 
     public async Task<EntradaDiariaResponse> EjecutarAsync(
@@ -52,30 +59,42 @@ public class RegistrarEntradaDiaria
                 "No se pudo identificar al usuario que registra el cobro.");
         }
 
-        var ahoraUtc = _reloj.AhoraUtc;
+        return await _transaccion
+            .EjecutarAsync<EntradaDiariaResponse>(
+                async ct =>
+                {
+                    var ahoraUtc = _reloj.AhoraUtc;
+                    var fechaOperacion =
+                        _reloj.ObtenerFechaLocal(ahoraUtc);
 
-        var entrada = new EntradaDiaria
-        {
-            Monto = monto,
-            Metodo = datos.Metodo!.Value,
-            FechaOperacion = _reloj.ObtenerFechaLocal(ahoraUtc),
-            FechaRegistro = ahoraUtc,
-            RegistradoPorUsuarioId = usuarioId,
-            Observacion = datos.Observacion
-        };
+                    await _validarDiaAbierto.EjecutarAsync(
+                        fechaOperacion,
+                        ct);
 
-        await _repository.AgregarAsync(
-            entrada,
-            cancellationToken);
+                    var entrada = new EntradaDiaria
+                    {
+                        Monto = monto,
+                        Metodo = datos.Metodo!.Value,
+                        FechaOperacion = fechaOperacion,
+                        FechaRegistro = ahoraUtc,
+                        RegistradoPorUsuarioId = usuarioId,
+                        Observacion = datos.Observacion
+                    };
 
-        return new EntradaDiariaResponse
-        {
-            Id = entrada.Id,
-            Monto = entrada.Monto,
-            Metodo = entrada.Metodo,
-            FechaOperacion = entrada.FechaOperacion,
-            FechaRegistro = entrada.FechaRegistro,
-            Observacion = entrada.Observacion
-        };
+                    await _repository.AgregarAsync(
+                        entrada,
+                        ct);
+
+                    return new EntradaDiariaResponse
+                    {
+                        Id = entrada.Id,
+                        Monto = entrada.Monto,
+                        Metodo = entrada.Metodo,
+                        FechaOperacion = entrada.FechaOperacion,
+                        FechaRegistro = entrada.FechaRegistro,
+                        Observacion = entrada.Observacion
+                    };
+                },
+                cancellationToken);
     }
 }

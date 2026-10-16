@@ -1,7 +1,9 @@
 using JpGym.Application.Membresias;
 using JpGym.Domain.Entities;
+using JpGym.Domain.Enums;
 using JpGym.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+
 
 namespace JpGym.Infrastructure.Repositories;
 
@@ -50,10 +52,10 @@ public class MembresiaRepository : IMembresiaRepository
     }
 
     public async Task<ListaMembresiasResponse> ListarPorMiembroAsync(
-        Guid miembroId,
-        int pagina,
-        int tamanoPagina,
-        CancellationToken cancellationToken = default)
+    Guid miembroId,
+    int pagina,
+    int tamanoPagina,
+    CancellationToken cancellationToken = default)
     {
         if (pagina < 1)
         {
@@ -62,7 +64,8 @@ public class MembresiaRepository : IMembresiaRepository
 
         if (tamanoPagina < 1 || tamanoPagina > 100)
         {
-            throw new ArgumentOutOfRangeException(nameof(tamanoPagina));
+            throw new ArgumentOutOfRangeException(
+                nameof(tamanoPagina));
         }
 
         var desplazamiento = ((long)pagina - 1) * tamanoPagina;
@@ -80,19 +83,22 @@ public class MembresiaRepository : IMembresiaRepository
             cancellationToken);
 
         var existeSinPago = await consulta.AnyAsync(
-            membresia => membresia.Pago == null,
+            membresia =>
+                membresia.Origen == OrigenMembresia.Sistema
+                && membresia.Pago == null,
             cancellationToken);
 
         if (existeSinPago)
         {
             throw new InvalidOperationException(
-                "Existe una membresía sin pago asociado. "
-                + "Revisa la integridad de los registros.");
+                "Existe una membresía creada en el sistema "
+                + "sin pago asociado. Revisa la integridad de los registros.");
         }
 
         var membresias = await consulta
-            .OrderByDescending(membresia => membresia.Pago!.FechaRegistro)
-            .ThenByDescending(membresia => membresia.Id)
+            .OrderByDescending(membresia => membresia.FechaInicio)
+            .ThenByDescending(membresia => membresia.FechaRegistro)
+            .ThenBy(membresia => membresia.Id)
             .Skip((int)desplazamiento)
             .Take(tamanoPagina)
             .Select(membresia => new MembresiaResponse
@@ -110,20 +116,35 @@ public class MembresiaRepository : IMembresiaRepository
                 FechaInicio = membresia.FechaInicio,
                 FechaFinExclusiva = membresia.FechaFinExclusiva,
                 FechaRegistro = membresia.FechaRegistro,
-                PagoId = membresia.Pago!.Id,
-                MontoPagado = membresia.Pago!.Monto,
-                Metodo = membresia.Pago!.Metodo,
-                FechaPago = membresia.Pago!.FechaRegistro,
+                Origen = membresia.Origen,
+
+                PagoId = membresia.Pago == null
+                    ? null
+                    : (Guid?)membresia.Pago.Id,
+
+                MontoPagado = membresia.Pago == null
+                    ? null
+                    : (decimal?)membresia.Pago.Monto,
+
+                Metodo = membresia.Pago == null
+                    ? null
+                    : (MetodoPago?)membresia.Pago.Metodo,
+
+                FechaPago = membresia.Pago == null
+                    ? null
+                    : (DateTimeOffset?)membresia.Pago.FechaRegistro,
 
                 ComprobanteId = _context.ComprobantesMembresia
                     .Where(comprobante =>
-                        comprobante.PagoId == membresia.Pago!.Id)
+                        membresia.Pago != null
+                        && comprobante.PagoId == membresia.Pago.Id)
                     .Select(comprobante => (Guid?)comprobante.Id)
                     .FirstOrDefault(),
 
                 NumeroComprobante = _context.ComprobantesMembresia
                     .Where(comprobante =>
-                        comprobante.PagoId == membresia.Pago!.Id)
+                        membresia.Pago != null
+                        && comprobante.PagoId == membresia.Pago.Id)
                     .Select(comprobante => comprobante.Numero)
                     .FirstOrDefault()
             })
@@ -140,9 +161,9 @@ public class MembresiaRepository : IMembresiaRepository
     }
 
     public async Task<Membresia?> ObtenerVigenteAsync(
-        Guid miembroId,
-        DateOnly fecha,
-        CancellationToken cancellationToken = default)
+     Guid miembroId,
+     DateOnly fecha,
+     CancellationToken cancellationToken = default)
     {
         return await _context.Membresias
             .AsNoTracking()
@@ -150,10 +171,60 @@ public class MembresiaRepository : IMembresiaRepository
                 membresia.MiembroId == miembroId
                 && membresia.FechaInicio <= fecha
                 && fecha < membresia.FechaFinExclusiva
-                && membresia.Pago != null
-                && membresia.Pago.Monto == membresia.PrecioContratado)
+                && (
+                    membresia.Origen == OrigenMembresia.Importacion
+                    || (
+                        membresia.Origen == OrigenMembresia.Sistema
+                        && membresia.Pago != null
+                        && membresia.Pago.Monto
+                            == membresia.PrecioContratado
+                    )
+                ))
             .OrderByDescending(membresia => membresia.FechaInicio)
             .ThenBy(membresia => membresia.Id)
             .FirstOrDefaultAsync(cancellationToken);
     }
-}
+
+    public async Task AgregarImportadaAsync(
+    Membresia membresia,
+    CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(membresia);
+
+        if (membresia.Origen != OrigenMembresia.Importacion)
+        {
+            throw new InvalidOperationException(
+                "Este método solo permite membresías importadas.");
+        }
+
+        if (membresia.Pago is not null)
+        {
+            throw new InvalidOperationException(
+                "La importación no debe generar un pago nuevo.");
+        }
+
+        if (membresia.MiembroId == Guid.Empty
+            || membresia.PlanMembresiaId == Guid.Empty)
+        {
+            throw new InvalidOperationException(
+                "La membresía debe tener un miembro y un plan válidos.");
+        }
+
+        if (membresia.FechaFinExclusiva <= membresia.FechaInicio)
+        {
+            throw new InvalidOperationException(
+                "El vencimiento debe ser posterior al inicio.");
+        }
+
+        if (membresia.PrecioContratado <= 0
+            || membresia.DuracionContratada <= 0)
+        {
+            throw new InvalidOperationException(
+                "El precio y la duración deben ser positivos.");
+        }
+
+        _context.Membresias.Add(membresia);
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+};

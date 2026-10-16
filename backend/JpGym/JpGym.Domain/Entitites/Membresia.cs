@@ -40,4 +40,7 @@ public class Membresia
 
     public Pago? Pago { get; set; }
 
+    public OrigenMembresia Origen { get; set; }
+     = OrigenMembresia.Sistema;
+
 }

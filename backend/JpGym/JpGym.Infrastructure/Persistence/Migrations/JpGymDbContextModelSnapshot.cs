@@ -179,6 +179,98 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("JpGym.Domain.Entities.CorteDiario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CerradoPorUsuarioId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<decimal>("CobrosEfectivo")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("CobrosTarjeta")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("CobrosTransferencia")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("Diferencia")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("EfectivoContado")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("EfectivoEsperado")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTimeOffset>("FechaCierre")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("FechaOperacion")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("FondoInicial")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("GastosEfectivo")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("GastosTarjeta")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("GastosTransferencia")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("IngresosEntradasDiarias")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("IngresosMembresias")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Observacion")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("SalidasDeCaja")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CerradoPorUsuarioId");
+
+                    b.HasIndex("FechaOperacion")
+                        .IsUnique();
+
+                    b.ToTable("CortesDiarios", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CortesDiarios_Diferencia", "[Diferencia] = [EfectivoContado] - [EfectivoEsperado]");
+
+                            t.HasCheckConstraint("CK_CortesDiarios_EfectivoEsperado", "[EfectivoEsperado] = [FondoInicial] + [CobrosEfectivo] - [SalidasDeCaja]");
+
+                            t.HasCheckConstraint("CK_CortesDiarios_Montos", "[FondoInicial] >= 0 AND [IngresosMembresias] >= 0 AND [IngresosEntradasDiarias] >= 0 AND [CobrosEfectivo] >= 0 AND [CobrosTarjeta] >= 0 AND [CobrosTransferencia] >= 0 AND [GastosEfectivo] >= 0 AND [GastosTarjeta] >= 0 AND [GastosTransferencia] >= 0 AND [SalidasDeCaja] >= 0 AND [EfectivoContado] >= 0");
+
+                            t.HasCheckConstraint("CK_CortesDiarios_Salidas", "[SalidasDeCaja] <= [GastosEfectivo]");
+                        });
+                });
+
             modelBuilder.Entity("JpGym.Domain.Entities.EntradaDiaria", b =>
                 {
                     b.Property<Guid>("Id")
@@ -337,6 +429,11 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<int>("Origen")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
                     b.Property<Guid>("PlanMembresiaId")
                         .HasColumnType("uniqueidentifier");
 
@@ -362,6 +459,8 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_Membresias_DuracionContratada", "[DuracionContratada] > 0");
 
                             t.HasCheckConstraint("CK_Membresias_Fechas", "[FechaFinExclusiva] > [FechaInicio]");
+
+                            t.HasCheckConstraint("CK_Membresias_Origen", "[Origen] IN (1, 2)");
 
                             t.HasCheckConstraint("CK_Membresias_PrecioContratado", "[PrecioContratado] > 0");
 
@@ -390,13 +489,25 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                     b.Property<int>("EdadAlRegistrarse")
                         .HasColumnType("int");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(254)
+                        .HasColumnType("nvarchar(254)");
+
                     b.Property<DateTimeOffset>("FechaRegistro")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("IdSistemaAnterior")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("NombreCompleto")
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Notas")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("NumeroDocumento")
                         .HasMaxLength(30)
@@ -411,6 +522,10 @@ namespace JpGym.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CodigoBarras")
                         .IsUnique();
+
+                    b.HasIndex("IdSistemaAnterior")
+                        .IsUnique()
+                        .HasFilter("[IdSistemaAnterior] IS NOT NULL");
 
                     b.ToTable("Miembros", t =>
                         {
@@ -752,6 +867,15 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Pago");
+                });
+
+            modelBuilder.Entity("JpGym.Domain.Entities.CorteDiario", b =>
+                {
+                    b.HasOne("JpGym.Infrastructure.Identity.UsuarioAplicacion", null)
+                        .WithMany()
+                        .HasForeignKey("CerradoPorUsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("JpGym.Domain.Entities.EntradaDiaria", b =>

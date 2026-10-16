@@ -14,6 +14,9 @@ using JpGym.Application.Finanzas;
 using JpGym.Application.Comprobantes;
 using JpGym.Application.Entrenadores;
 using JpGym.Application.Clases;
+using JpGym.Application.Importaciones;
+using JpGym.Application.Exportaciones;
+using JpGym.Application.CortesDiarios;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -168,6 +171,22 @@ builder.Services.AddScoped<ConsultarClasePorId>();
 builder.Services.AddScoped<ConsultarEntrenadorPorId>();
 
 builder.Services.AddScoped<DescargarComprobante>();
+
+builder.Services.AddScoped<ValidadorFilaImportacion>();
+
+builder.Services.AddScoped<PrepararImportacionMiembros>();
+
+builder.Services.AddScoped<ConfirmarImportacionMiembros>();
+
+builder.Services.AddScoped<ExportarMiembros>();
+
+builder.Services.AddScoped<ValidarDiaAbierto>();
+
+builder.Services.AddScoped<CerrarCorteDiario>();
+
+builder.Services.AddScoped<ConsultarCortesDiarios>();
+builder.Services.AddScoped<ConsultarCorteDiarioPorId>();
+builder.Services.AddScoped<ConsultarCorteDiarioPorFecha>();
 
 
 var origenesFrontend = builder.Configuration

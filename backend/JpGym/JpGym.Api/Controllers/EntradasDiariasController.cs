@@ -3,6 +3,7 @@ using System.Security.Claims;
 using JpGym.Application.EntradasDiarias;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 
 namespace JpGym.Api.Controllers;
 
@@ -20,6 +21,7 @@ public class EntradasDiariasController : ControllerBase
     }
 
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<ActionResult<EntradaDiariaResponse>> Registrar(
         [FromBody] RegistrarEntradaDiariaRequest request,
         CancellationToken cancellationToken)
@@ -56,14 +58,27 @@ public class EntradasDiariasController : ControllerBase
 
             return ValidationProblem(ModelState);
         }
+        catch (Exception exception)
+            when (EsInterbloqueo(exception))
+        {
+            return Conflict(new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "No se pudo registrar el cobro.",
+                Detail = "Ocurrió un conflicto entre operaciones "
+                    + "y el cobro no se guardó. "
+                    + "Vuelve a intentarlo; si el día ya está cerrado, "
+                    + "el sistema rechazará el registro."
+            });
+        }
     }
 
     [HttpGet]
     [Authorize(Policy = "SoloAdministrador")]
     public async Task<ActionResult<ListaEntradasDiariasResponse>> Listar(
-    [FromQuery] ConsultarEntradasDiariasRequest request,
-    [FromServices] ConsultarEntradasDiarias consultarEntradasDiarias,
-    CancellationToken cancellationToken)
+        [FromQuery] ConsultarEntradasDiariasRequest request,
+        [FromServices] ConsultarEntradasDiarias consultarEntradasDiarias,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -86,14 +101,41 @@ public class EntradasDiariasController : ControllerBase
     [HttpGet("summary")]
     [Authorize(Policy = "SoloAdministrador")]
     public async Task<ActionResult<ResumenEntradasDiariasResponse>> Resumen(
-    [FromQuery] DateOnly? fecha,
-    [FromServices] ConsultarResumenEntradasDiarias consultarResumen,
-    CancellationToken cancellationToken)
+        [FromQuery] DateOnly? fecha,
+        [FromServices] ConsultarResumenEntradasDiarias consultarResumen,
+        CancellationToken cancellationToken)
     {
-        var resultado = await consultarResumen.EjecutarAsync(
-            fecha,
-            cancellationToken);
+        try
+        {
+            var resultado = await consultarResumen.EjecutarAsync(
+                fecha,
+                cancellationToken);
 
-        return Ok(resultado);
+            return Ok(resultado);
+        }
+        catch (ValidationException exception)
+        {
+            ModelState.AddModelError(
+                string.Empty,
+                exception.Message);
+
+            return ValidationProblem(ModelState);
+        }
+    }
+
+    private static bool EsInterbloqueo(Exception exception)
+    {
+        for (Exception? actual = exception;
+             actual is not null;
+             actual = actual.InnerException)
+        {
+            if (actual is SqlException sqlException
+                && sqlException.Number == 1205)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

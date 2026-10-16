@@ -17,15 +17,22 @@ public class GeneradorComprobantePdf : IGeneradorComprobantePdf
         CultureInfo.GetCultureInfo("es-DO");
 
     private readonly DatosGymComprobante _datosGym;
+    private readonly IGeneradorQrMiembro _generadorQr;
 
-    public GeneradorComprobantePdf(DatosGymComprobante datosGym)
+    public GeneradorComprobantePdf(
+        DatosGymComprobante datosGym,
+        IGeneradorQrMiembro generadorQr)
     {
         _datosGym = datosGym;
+        _generadorQr = generadorQr;
     }
 
     public byte[] Generar(ComprobanteMembresia comprobante)
     {
         ArgumentNullException.ThrowIfNull(comprobante);
+
+        var imagenQr = _generadorQr.Generar(
+            comprobante.CodigoMiembro);
 
         var fechaPagoLocal = TimeZoneInfo.ConvertTime(
             comprobante.FechaPago,
@@ -111,6 +118,40 @@ public class GeneradorComprobantePdf : IGeneradorComprobantePdf
 
                         columna.Item().Text(
                             $"Código: {comprobante.CodigoMiembro}");
+
+                        columna.Item()
+                            .PaddingTop(5)
+                            .Row(fila =>
+                            {
+                                fila.Spacing(15);
+
+                                fila.ConstantItem(100)
+                                    .Height(100)
+                                    .Image(imagenQr)
+                                    .FitArea();
+
+                                fila.RelativeItem()
+                                    .Column(detalle =>
+                                    {
+                                        detalle.Spacing(5);
+
+                                        detalle.Item()
+                                            .Text("QR DEL MIEMBRO")
+                                            .SemiBold();
+
+                                        detalle.Item()
+                                            .Text(comprobante.CodigoMiembro)
+                                            .FontSize(12)
+                                            .Bold();
+
+                                        detalle.Item()
+                                            .Text(
+                                                "Escanea este QR en el apartado "
+                                                + "Consultar miembro para "
+                                                + "comprobar su acceso.")
+                                            .FontSize(9);
+                                    });
+                            });
 
                         columna.Item()
                             .PaddingTop(10)

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using JpGym.Application.Abstracciones;
+using JpGym.Application.CortesDiarios;
 using JpGym.Domain.Entities;
 using JpGym.Domain.Enums;
 
@@ -9,13 +10,19 @@ public class RegistrarGasto
 {
     private readonly IGastoRepository _repository;
     private readonly IRelojGym _reloj;
+    private readonly ValidarDiaAbierto _validarDiaAbierto;
+    private readonly ITransaccionGym _transaccion;
 
     public RegistrarGasto(
         IGastoRepository repository,
-        IRelojGym reloj)
+        IRelojGym reloj,
+        ValidarDiaAbierto validarDiaAbierto,
+        ITransaccionGym transaccion)
     {
         _repository = repository;
         _reloj = reloj;
+        _validarDiaAbierto = validarDiaAbierto;
+        _transaccion = transaccion;
     }
 
     public async Task<GastoResponse> EjecutarAsync(
@@ -31,7 +38,6 @@ public class RegistrarGasto
             Monto = request.Monto,
             Metodo = request.Metodo,
             SaleDeCaja = request.SaleDeCaja,
-
             Observacion = string.IsNullOrWhiteSpace(request.Observacion)
                 ? null
                 : request.Observacion.Trim()
@@ -64,34 +70,45 @@ public class RegistrarGasto
                 "No se pudo identificar al usuario que registra el gasto.");
         }
 
-        var ahoraUtc = _reloj.AhoraUtc;
+        return await _transaccion.EjecutarAsync<GastoResponse>(
+            async ct =>
+            {
+                var ahoraUtc = _reloj.AhoraUtc;
+                var fechaOperacion =
+                    _reloj.ObtenerFechaLocal(ahoraUtc);
 
-        var gasto = new Gasto
-        {
-            Concepto = datos.Concepto,
-            Monto = monto,
-            Metodo = metodo,
-            SaleDeCaja = saleDeCaja,
-            FechaOperacion = _reloj.ObtenerFechaLocal(ahoraUtc),
-            FechaRegistro = ahoraUtc,
-            RegistradoPorUsuarioId = usuarioId,
-            Observacion = datos.Observacion
-        };
+                await _validarDiaAbierto.EjecutarAsync(
+                    fechaOperacion,
+                    ct);
 
-        await _repository.AgregarAsync(
-            gasto,
+                var gasto = new Gasto
+                {
+                    Concepto = datos.Concepto,
+                    Monto = monto,
+                    Metodo = metodo,
+                    SaleDeCaja = saleDeCaja,
+                    FechaOperacion = fechaOperacion,
+                    FechaRegistro = ahoraUtc,
+                    RegistradoPorUsuarioId = usuarioId,
+                    Observacion = datos.Observacion
+                };
+
+                await _repository.AgregarAsync(
+                    gasto,
+                    ct);
+
+                return new GastoResponse
+                {
+                    Id = gasto.Id,
+                    Concepto = gasto.Concepto,
+                    Monto = gasto.Monto,
+                    Metodo = gasto.Metodo,
+                    SaleDeCaja = gasto.SaleDeCaja,
+                    FechaOperacion = gasto.FechaOperacion,
+                    FechaRegistro = gasto.FechaRegistro,
+                    Observacion = gasto.Observacion
+                };
+            },
             cancellationToken);
-
-        return new GastoResponse
-        {
-            Id = gasto.Id,
-            Concepto = gasto.Concepto,
-            Monto = gasto.Monto,
-            Metodo = gasto.Metodo,
-            SaleDeCaja = gasto.SaleDeCaja,
-            FechaOperacion = gasto.FechaOperacion,
-            FechaRegistro = gasto.FechaRegistro,
-            Observacion = gasto.Observacion
-        };
     }
 }
