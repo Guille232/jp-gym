@@ -9,6 +9,7 @@ export type AppPage =
   | 'payments'
   | 'dailyEntries'
   | 'expenses'
+  | 'dailyClose'
   | 'employees'
   | 'trainers'
   | 'classes'
@@ -81,6 +82,11 @@ const menuGroups: MenuGroup[] = [
       {
         label: 'Gastos',
         id: 'expenses',
+        adminOnly: true,
+      },
+      {
+        label: 'Corte diario',
+        id: 'dailyClose',
         adminOnly: true,
       },
       {
