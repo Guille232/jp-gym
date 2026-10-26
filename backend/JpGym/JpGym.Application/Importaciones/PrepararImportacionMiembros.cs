@@ -26,11 +26,18 @@ public class PrepararImportacionMiembros
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filas);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (filas.Count == 0 || filas.Count > 5000)
         {
             throw new ValidationException(
                 "La importación debe contener entre 1 y 5000 registros.");
+        }
+
+        if (filas.Any(fila => fila is null))
+        {
+            throw new ValidationException(
+                "La importación no puede contener filas nulas.");
         }
 
         var ids = filas
@@ -45,12 +52,12 @@ public class PrepararImportacionMiembros
             .ToHashSet(StringComparer.Ordinal);
 
         var documentosRepetidos = filas
-    .Select(fila => NormalizarId(fila.NumeroDocumento))
-    .Where(documento => documento.Length > 0)
-    .GroupBy(documento => documento, StringComparer.Ordinal)
-    .Where(grupo => grupo.Count() > 1)
-    .Select(grupo => grupo.Key)
-    .ToHashSet(StringComparer.Ordinal);
+            .Select(fila => NormalizarId(fila.NumeroDocumento))
+            .Where(documento => documento.Length > 0)
+            .GroupBy(documento => documento, StringComparer.Ordinal)
+            .Where(grupo => grupo.Count() > 1)
+            .Select(grupo => grupo.Key)
+            .ToHashSet(StringComparer.Ordinal);
 
         var nombresTelefonosRepetidos = filas
             .Where(fila =>
@@ -75,28 +82,34 @@ public class PrepararImportacionMiembros
         var planes = await _planRepository.ListarActivosAsync(
             cancellationToken);
 
-        var resultados =
-            new List<FilaImportacionMiembroResponse>();
-
         var posiblesCoincidencias = await _miembroRepository
-    .BuscarCoincidenciasImportacionAsync(
-        filas.Select(fila => fila.NumeroDocumento ?? string.Empty)
-            .ToArray(),
-        filas.Select(fila => fila.Telefono ?? string.Empty)
-            .ToArray(),
-        cancellationToken);
+            .BuscarCoincidenciasImportacionAsync(
+                filas.Select(fila =>
+                    fila.NumeroDocumento ?? string.Empty)
+                    .ToArray(),
+                filas.Select(fila =>
+                    fila.Telefono ?? string.Empty)
+                    .ToArray(),
+                cancellationToken);
 
         var documentosExistentes = posiblesCoincidencias
             .Where(miembro =>
                 !string.IsNullOrWhiteSpace(miembro.NumeroDocumento))
-            .Select(miembro => NormalizarId(miembro.NumeroDocumento))
+            .Select(miembro =>
+                NormalizarId(miembro.NumeroDocumento))
             .ToHashSet(StringComparer.Ordinal);
 
         var nombresTelefonosExistentes = posiblesCoincidencias
+            .Where(miembro =>
+                !string.IsNullOrWhiteSpace(miembro.NombreCompleto)
+                && !string.IsNullOrWhiteSpace(miembro.Telefono))
             .Select(miembro => (
                 Nombre: NormalizarId(miembro.NombreCompleto),
                 Telefono: miembro.Telefono.Trim()))
             .ToHashSet();
+
+        var resultados =
+            new List<FilaImportacionMiembroResponse>();
 
         foreach (var fila in filas)
         {
@@ -104,18 +117,28 @@ public class PrepararImportacionMiembros
 
             var errores = _validador.Validar(fila).ToList();
 
-            var documentoFila = NormalizarId(fila.NumeroDocumento);
+            var documentoFila = NormalizarId(
+                fila.NumeroDocumento);
+
+            var nombreFila = NormalizarId(
+                fila.NombreCompleto);
+
+            var telefonoFila = fila.Telefono?.Trim()
+                ?? string.Empty;
 
             if (documentoFila.Length > 0
                 && documentosRepetidos.Contains(documentoFila))
             {
                 errores.Add(
-                    "El documento aparece en varias filas de esta importación.");
+                    "El documento aparece en varias filas "
+                    + "de esta importación.");
             }
 
-            if (nombresTelefonosRepetidos.Contains((
-                NormalizarId(fila.NombreCompleto),
-                fila.Telefono?.Trim() ?? string.Empty)))
+            if (nombreFila.Length > 0
+                && telefonoFila.Length > 0
+                && nombresTelefonosRepetidos.Contains((
+                    nombreFila,
+                    telefonoFila)))
             {
                 errores.Add(
                     "El mismo nombre y teléfono aparecen en varias filas. "
@@ -137,20 +160,21 @@ public class PrepararImportacionMiembros
             if (existe)
             {
                 errores.Add(
-                    "Ya existe un miembro importado con este ID antiguo.");
+                    "Ya existe un miembro importado "
+                    + "con este ID antiguo.");
             }
-
-            if (!existe)
+            else
             {
-                var documento = NormalizarId(fila.NumeroDocumento);
-
-                var coincideDocumento = documento.Length > 0
-                    && documentosExistentes.Contains(documento);
+                var coincideDocumento =
+                    documentoFila.Length > 0
+                    && documentosExistentes.Contains(documentoFila);
 
                 var coincideNombreTelefono =
-                    nombresTelefonosExistentes.Contains((
-                        NormalizarId(fila.NombreCompleto),
-                        fila.Telefono?.Trim() ?? string.Empty));
+                    nombreFila.Length > 0
+                    && telefonoFila.Length > 0
+                    && nombresTelefonosExistentes.Contains((
+                        nombreFila,
+                        telefonoFila));
 
                 if (coincideDocumento || coincideNombreTelefono)
                 {
@@ -172,7 +196,6 @@ public class PrepararImportacionMiembros
                 .ToArray();
 
             Guid? planId = null;
-            DateOnly? fechaFin = null;
 
             if (coincidencias.Length == 0)
             {
@@ -200,30 +223,60 @@ public class PrepararImportacionMiembros
                     errores.Add(
                         "La duración del plan no es válida.");
                 }
+            }
+
+            DateOnly? fechaFin = null;
+
+            if (!fila.FechaVencimiento.HasValue)
+            {
+                errores.Add(
+                    "La fecha de vencimiento histórica es obligatoria. "
+                    + "No se calculará usando el plan actual.");
+            }
+            else
+            {
+                var vencimiento = fila.FechaVencimiento.Value;
+
+                if (vencimiento == DateOnly.MaxValue)
+                {
+                    errores.Add(
+                        "La fecha de vencimiento supera el rango permitido.");
+                }
                 else if (fila.FechaInicio.HasValue)
                 {
-                    try
-                    {
-                        var inicio = fila.FechaInicio.Value;
-
-                        fechaFin = plan.UnidadDuracion switch
-                        {
-                            UnidadDuracion.Dias =>
-                                inicio.AddDays(plan.Duracion),
-
-                            UnidadDuracion.Meses =>
-                                inicio.AddMonths(plan.Duracion),
-
-                            _ => null
-                        };
-                    }
-                    catch (ArgumentOutOfRangeException)
+                    if (vencimiento < fila.FechaInicio.Value)
                     {
                         errores.Add(
-                            "Las fechas de la membresía "
-                            + "superan el rango permitido.");
+                            "La fecha de vencimiento no puede ser "
+                            + "anterior a la fecha de inicio.");
+                    }
+                    else
+                    {
+                        // El vencimiento del Excel es el último día
+                        // permitido. El fin exclusivo es el día siguiente.
+                        fechaFin = vencimiento.AddDays(1);
                     }
                 }
+            }
+
+            var advertencias = new List<string>
+            {
+                "La membresía se importará sin generar "
+                + "un pago nuevo ni un comprobante de cobro."
+            };
+
+            if (!fila.Edad.HasValue)
+            {
+                advertencias.Add(
+                    "La edad no está informada. "
+                    + "Deberá completarse posteriormente.");
+            }
+
+            if (string.IsNullOrWhiteSpace(fila.Telefono))
+            {
+                advertencias.Add(
+                    "El teléfono no está informado. "
+                    + "Deberá completarse posteriormente.");
             }
 
             resultados.Add(new FilaImportacionMiembroResponse
@@ -235,11 +288,7 @@ public class PrepararImportacionMiembros
                 Errores = errores
                     .Distinct(StringComparer.Ordinal)
                     .ToArray(),
-                Advertencias = new[]
-                {
-                    "La membresía se importará sin generar "
-                    + "un pago nuevo ni un comprobante de cobro."
-                }
+                Advertencias = advertencias.ToArray()
             });
         }
 

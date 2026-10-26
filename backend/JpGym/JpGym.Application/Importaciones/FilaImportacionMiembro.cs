@@ -14,8 +14,8 @@ public class FilaImportacionMiembro
 
     [EmailAddress(ErrorMessage = "El correo no es válido.")]
     [StringLength(
-    254,
-    ErrorMessage = "El correo no puede superar los 254 caracteres.")]
+        254,
+        ErrorMessage = "El correo no puede superar los 254 caracteres.")]
     public string? Email { get; set; }
 
     public string NombrePlan { get; set; } = string.Empty;
@@ -24,14 +24,16 @@ public class FilaImportacionMiembro
 
     public DateOnly? FechaInicio { get; set; }
 
+    // Último día en que el miembro todavía puede asistir.
+    public DateOnly? FechaVencimiento { get; set; }
+
     public string EstadoOriginal { get; set; } = string.Empty;
 
     [StringLength(
-    1000,
-    ErrorMessage = "Las notas no pueden superar los 1000 caracteres.")]
+        1000,
+        ErrorMessage = "Las notas no pueden superar los 1000 caracteres.")]
     public string? Notas { get; set; }
 
-    // Datos que el Excel antiguo no contiene.
     public int? Edad { get; set; }
 
     public string? NumeroDocumento { get; set; }

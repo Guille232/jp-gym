@@ -21,6 +21,9 @@ using JpGym.Application.Clases;
 using JpGym.Application.Importaciones;
 using JpGym.Application.Exportaciones;
 using JpGym.Application.CortesDiarios;
+using JpGym.Application.Pagos;
+using JpGym.Application.Dashboard;
+using JpGym.Application.Analiticas;
 
 namespace JpGym.Infrastructure;
 
@@ -100,6 +103,18 @@ public static class DependencyInjection
         services.AddScoped<IGeneradorQrMiembro, GeneradorQrMiembro>();
 
         services.AddScoped<ICorteDiarioRepository, CorteDiarioRepository>();
+
+        services.AddScoped<IPagoRepository, PagoRepository>();
+
+        services.AddScoped<IVencimientosRepository,
+    VencimientosRepository>();
+
+        services.AddScoped<IAnaliticasRepository,
+    AnaliticasRepository>();
+
+        services.AddScoped<IMembresiasGeneralesRepository,
+    MembresiasGeneralesRepository>();
+
 
         return services;
     }

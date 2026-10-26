@@ -48,4 +48,14 @@ public class CorteDiarioResponse
         TotalIngresos - TotalGastos;
 
     public string NombreUsuarioCierre { get; set; } = string.Empty;
+
+    public bool Reabierto { get; set; }
+
+    public string? ReabiertoPorUsuarioId { get; set; }
+
+    public string? NombreUsuarioReapertura { get; set; }
+
+    public DateTimeOffset? FechaReapertura { get; set; }
+
+    public string? MotivoReapertura { get; set; }
 }

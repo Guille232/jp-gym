@@ -4,11 +4,18 @@ using JpGym.Domain.Entities;
 using JpGym.Domain.Enums;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace JpGym.Infrastructure.Services;
 
 public class GeneradorComprobantePdf : IGeneradorComprobantePdf
 {
+    private const string Oscuro = "#18181B";
+    private const string Rojo = "#E11D2E";
+    private const string GrisTexto = "#52525B";
+    private const string GrisClaro = "#F4F4F5";
+    private const string Borde = "#E4E4E7";
+
     private readonly TimeZoneInfo _zonaGym =
         TimeZoneInfo.FindSystemTimeZoneById(
             "America/Santo_Domingo");
@@ -59,154 +66,285 @@ public class GeneradorComprobantePdf : IGeneradorComprobantePdf
         {
             documento.Page(pagina =>
             {
-                pagina.Size(PageSizes.A4);
-                pagina.Margin(40);
-                pagina.DefaultTextStyle(estilo =>
-                    estilo.FontSize(11));
+                pagina.Size(PageSizes.A5);
+                pagina.Margin(24);
+                pagina.PageColor(Colors.White);
 
-                pagina.Header().Column(columna =>
-                {
-                    columna.Spacing(6);
+                pagina.DefaultTextStyle(estilo => estilo
+                    .FontSize(10)
+                    .FontColor(Oscuro));
 
-                    if (_datosGym.Logo is { Length: > 0 })
+                pagina.Header()
+                    .Background(Oscuro)
+                    .Padding(16)
+                    .Row(fila =>
                     {
-                        columna.Item()
-                            .Width(90)
-                            .Height(70)
-                            .Image(_datosGym.Logo)
-                            .FitArea();
-                    }
+                        fila.Spacing(12);
 
-                    columna.Item()
-                        .Text(comprobante.NombreGym)
-                        .FontSize(24)
-                        .Bold();
+                        if (_datosGym.Logo is { Length: > 0 })
+                        {
+                            fila.ConstantItem(58)
+                                .Height(58)
+                                .Background(Colors.White)
+                                .Padding(4)
+                                .Image(_datosGym.Logo)
+                                .FitArea();
+                        }
 
-                    columna.Item()
-                        .Text("COMPROBANTE DE PAGO — MEMBRESÍA MENSUAL")
-                        .FontSize(14)
-                        .SemiBold();
+                        fila.RelativeItem()
+                            .AlignMiddle()
+                            .Column(columna =>
+                            {
+                                columna.Spacing(4);
 
-                    columna.Item()
-                        .Text($"Número: {comprobante.Numero}")
-                        .FontSize(9);
-                });
+                                columna.Item()
+                                    .Text(comprobante.NombreGym)
+                                    .FontSize(23)
+                                    .Bold()
+                                    .FontColor(Colors.White);
+
+                                columna.Item()
+                                    .Text("COMPROBANTE DE PAGO")
+                                    .FontSize(10)
+                                    .SemiBold()
+                                    .FontColor(Colors.White);
+
+                                columna.Item()
+                                    .Text("Membresía mensual")
+                                    .FontSize(9)
+                                    .FontColor("#D4D4D8");
+                            });
+                    });
 
                 pagina.Content()
-                    .PaddingVertical(20)
+                    .PaddingTop(14)
                     .Column(columna =>
                     {
-                        columna.Spacing(10);
+                        columna.Spacing(12);
 
-                        columna.Item().Text(
-                            "Fecha de emisión: "
-                            + fechaEmisionLocal.ToString(
-                                "dd/MM/yyyy HH:mm", _cultura));
+                        columna.Item().Column(detalle =>
+                        {
+                            detalle.Spacing(3);
 
-                        columna.Item().Text(
-                            "Fecha de pago: "
-                            + fechaPagoLocal.ToString(
-                                "dd/MM/yyyy HH:mm", _cultura));
+                            detalle.Item()
+                                .Text("NÚMERO DE COMPROBANTE")
+                                .FontSize(8)
+                                .FontColor(GrisTexto);
 
-                        columna.Item()
-                            .PaddingTop(10)
-                            .Text("DATOS DEL MIEMBRO")
-                            .SemiBold();
-
-                        columna.Item().Text(
-                            $"Nombre: {comprobante.NombreMiembro}");
-
-                        columna.Item().Text(
-                            $"Código: {comprobante.CodigoMiembro}");
+                            // Se conserva el número completo del comprobante.
+                            detalle.Item()
+                                .Text(comprobante.Numero)
+                                .FontSize(9)
+                                .SemiBold();
+                        });
 
                         columna.Item()
-                            .PaddingTop(5)
                             .Row(fila =>
                             {
-                                fila.Spacing(15);
+                                fila.Spacing(12);
 
-                                fila.ConstantItem(100)
-                                    .Height(100)
-                                    .Image(imagenQr)
-                                    .FitArea();
+                                fila.RelativeItem().Element(contenedor =>
+                                    MostrarDato(
+                                        contenedor,
+                                        "Fecha de pago",
+                                        fechaPagoLocal.ToString(
+                                            "dd/MM/yyyy HH:mm",
+                                            _cultura)));
 
-                                fila.RelativeItem()
-                                    .Column(detalle =>
+                                fila.RelativeItem().Element(contenedor =>
+                                    MostrarDato(
+                                        contenedor,
+                                        "Fecha de emisión",
+                                        fechaEmisionLocal.ToString(
+                                            "dd/MM/yyyy HH:mm",
+                                            _cultura)));
+                            });
+
+                        columna.Item()
+                            .Border(1)
+                            .BorderColor(Borde)
+                            .Padding(12)
+                            .Column(miembro =>
+                            {
+                                miembro.Spacing(5);
+
+                                miembro.Item()
+                                    .Text("MIEMBRO")
+                                    .FontSize(8)
+                                    .SemiBold()
+                                    .FontColor(GrisTexto);
+
+                                miembro.Item()
+                                    .Text(comprobante.NombreMiembro)
+                                    .FontSize(14)
+                                    .Bold();
+
+                                miembro.Item()
+                                    .Text(
+                                        "Código: "
+                                        + comprobante.CodigoMiembro)
+                                    .FontSize(10)
+                                    .FontColor(GrisTexto);
+                            });
+
+                        columna.Item()
+                            .Column(plan =>
+                            {
+                                plan.Spacing(8);
+
+                                plan.Item()
+                                    .Text("MEMBRESÍA CONTRATADA")
+                                    .FontSize(9)
+                                    .SemiBold()
+                                    .FontColor(GrisTexto);
+
+                                plan.Item()
+                                    .Text(comprobante.NombrePlan)
+                                    .FontSize(13)
+                                    .Bold();
+
+                                plan.Item()
+                                    .Background(GrisClaro)
+                                    .Padding(10)
+                                    .Row(fila =>
                                     {
-                                        detalle.Spacing(5);
+                                        fila.Spacing(12);
 
-                                        detalle.Item()
-                                            .Text("QR DEL MIEMBRO")
-                                            .SemiBold();
+                                        fila.RelativeItem()
+                                            .Element(contenedor =>
+                                                MostrarDato(
+                                                    contenedor,
+                                                    "Inicio",
+                                                    comprobante.FechaInicio
+                                                        .ToString(
+                                                            "dd/MM/yyyy",
+                                                            _cultura)));
 
-                                        detalle.Item()
-                                            .Text(comprobante.CodigoMiembro)
-                                            .FontSize(12)
-                                            .Bold();
-
-                                        detalle.Item()
-                                            .Text(
-                                                "Escanea este QR en el apartado "
-                                                + "Consultar miembro para "
-                                                + "comprobar su acceso.")
-                                            .FontSize(9);
+                                        fila.RelativeItem()
+                                            .Element(contenedor =>
+                                                MostrarDato(
+                                                    contenedor,
+                                                    "Último día válido",
+                                                    ultimoDiaValido.ToString(
+                                                        "dd/MM/yyyy",
+                                                        _cultura)));
                                     });
                             });
 
                         columna.Item()
+                            .Background(Rojo)
+                            .Padding(14)
+                            .Column(pago =>
+                            {
+                                pago.Spacing(4);
+
+                                pago.Item()
+                                    .Text("TOTAL PAGADO")
+                                    .FontSize(9)
+                                    .SemiBold()
+                                    .FontColor(Colors.White);
+
+                                pago.Item()
+                                    .Text(
+                                        "RD$ "
+                                        + comprobante.MontoPagado.ToString(
+                                            "N2",
+                                            _cultura))
+                                    .FontSize(26)
+                                    .Bold()
+                                    .FontColor(Colors.White);
+
+                                pago.Item()
+                                    .Text("Método: " + metodo)
+                                    .FontSize(10)
+                                    .FontColor(Colors.White);
+                            });
+
+                        columna.Item()
+                            .Element(contenedor =>
+                                MostrarDato(
+                                    contenedor,
+                                    "Registrado por",
+                                    comprobante.NombreUsuarioCobro));
+
+                        columna.Item()
+                            .BorderTop(1)
+                            .BorderColor(Borde)
                             .PaddingTop(10)
-                            .Text("MEMBRESÍA CONTRATADA")
-                            .SemiBold();
+                            .Row(fila =>
+                            {
+                                fila.Spacing(12);
 
-                        columna.Item().Text(
-                            $"Plan: {comprobante.NombrePlan}");
+                                fila.ConstantItem(76)
+                                    .Height(76)
+                                    .Image(imagenQr)
+                                    .FitArea();
 
-                        columna.Item().Text(
-                            "Inicio: "
-                            + comprobante.FechaInicio.ToString(
-                                "dd/MM/yyyy", _cultura));
+                                fila.RelativeItem()
+                                    .AlignMiddle()
+                                    .Column(qr =>
+                                    {
+                                        qr.Spacing(4);
 
-                        columna.Item().Text(
-                            "Último día válido: "
-                            + ultimoDiaValido.ToString(
-                                "dd/MM/yyyy", _cultura));
+                                        qr.Item()
+                                            .Text("IDENTIFICACIÓN DEL MIEMBRO")
+                                            .FontSize(8)
+                                            .SemiBold();
+
+                                        qr.Item()
+                                            .Text(comprobante.CodigoMiembro)
+                                            .FontSize(12)
+                                            .Bold();
+
+                                        qr.Item()
+                                            .Text(
+                                                "Escanea el QR en el sistema "
+                                                + "para consultar la vigencia "
+                                                + "de la membresía.")
+                                            .FontSize(8)
+                                            .FontColor(GrisTexto);
+                                    });
+                            });
 
                         columna.Item()
-                            .PaddingTop(10)
-                            .Text("PAGO")
-                            .SemiBold();
-
-                        columna.Item().Text(
-                            $"Método: {metodo}");
-
-                        columna.Item()
-                            .Text(
-                                "Total pagado: RD$ "
-                                + comprobante.MontoPagado.ToString(
-                                    "N2", _cultura))
-                            .FontSize(16)
-                            .Bold();
-
-                        columna.Item().Text(
-                            "Registrado por: "
-                            + comprobante.NombreUsuarioCobro);
-
-                        columna.Item()
-                            .PaddingTop(15)
                             .Text(
                                 "Pago completo de membresía mensual. "
-                                + "Fechas y horas mostradas en "
-                                + "hora de República Dominicana.")
-                            .FontSize(9);
+                                + "Fechas y horas en hora de "
+                                + "República Dominicana.")
+                            .FontSize(8)
+                            .FontColor(GrisTexto);
                     });
 
                 pagina.Footer()
+                    .PaddingTop(10)
                     .AlignCenter()
                     .Text(
                         "Comprobante interno de pago. "
                         + "No es un comprobante fiscal.")
-                    .FontSize(9);
+                    .FontSize(8)
+                    .FontColor(GrisTexto);
             });
         }).GeneratePdf();
+    }
+
+    private static void MostrarDato(
+        IContainer contenedor,
+        string etiqueta,
+        string valor)
+    {
+        contenedor.Column(columna =>
+        {
+            columna.Spacing(3);
+
+            columna.Item()
+                .Text(etiqueta)
+                .FontSize(8)
+                .FontColor(GrisTexto);
+
+            columna.Item()
+                .Text(valor)
+                .FontSize(10)
+                .SemiBold();
+        });
     }
 }

@@ -131,6 +131,63 @@ public class CortesDiariosController : ControllerBase
         }
     }
 
+
+    [HttpPost("{id:guid}/reopen")]
+    [ValidateAntiForgeryToken]
+    public async Task<ActionResult<CorteDiarioResponse>> Reabrir(
+     Guid id,
+     [FromBody] ReabrirCorteDiarioRequest request,
+     [FromServices] ReabrirCorteDiario reabrirCorte,
+     CancellationToken cancellationToken)
+    {
+        var usuarioId = User.FindFirstValue(
+            ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(usuarioId))
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            var resultado = await reabrirCorte.EjecutarAsync(
+                id,
+                request,
+                usuarioId,
+                cancellationToken);
+
+            if (resultado is null)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Status = StatusCodes.Status404NotFound,
+                    Title = "Corte diario no encontrado."
+                });
+            }
+
+            return Ok(resultado);
+        }
+        catch (ValidationException exception)
+        {
+            ModelState.AddModelError(
+                string.Empty,
+                exception.Message);
+
+            return ValidationProblem(ModelState);
+        }
+        catch (Exception exception)
+            when (EsConflictoCierre(exception))
+        {
+            return Conflict(new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "No se pudo reabrir el corte.",
+                Detail = "Ocurrió un conflicto entre operaciones. "
+                    + "Actualiza el estado del día antes de intentarlo otra vez."
+            });
+        }
+    }
+
     [HttpGet("by-date")]
     public async Task<ActionResult<CorteDiarioResponse>> ObtenerPorFecha(
         [FromQuery] DateOnly? fecha,
@@ -182,3 +239,4 @@ public class CortesDiariosController : ControllerBase
         return false;
     }
 }
+

@@ -1,13 +1,28 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { iniciarSesion } from '../../services/auth'
+import type { Sesion } from '../../services/auth'
 
-export type UserRole =
-  | 'Administrador'
-  | 'Recepción'
+export type UserRole = 'Administrador' | 'Recepción'
 
 export type AuthUser = {
   name: string
   role: UserRole
+}
+
+export function convertirSesion(sesion: Sesion): AuthUser {
+  if (!sesion.esAdministrador && !sesion.esEmpleado) {
+    throw new Error(
+      'Tu cuenta no tiene un rol autorizado para utilizar el sistema.',
+    )
+  }
+
+  return {
+    name: sesion.usuario ?? 'Usuario',
+    role: sesion.esAdministrador
+      ? 'Administrador'
+      : 'Recepción',
+  }
 }
 
 type LoginPageProps = {
@@ -17,64 +32,37 @@ type LoginPageProps = {
 export default function LoginPage({
   onLogin,
 }: LoginPageProps) {
-  const [username, setUsername] =
-    useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
 
-  const [password, setPassword] =
-    useState('')
-
-  const [error, setError] =
-    useState('')
-
-  function handleSubmit(
+  async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault()
 
-    setError('')
-
-    const normalizedUsername =
-      username.trim().toLowerCase()
-
-    if (
-      normalizedUsername === 'admin' &&
-      password === '1234'
-    ) {
-      onLogin({
-        name: 'Administrador JP GYM',
-        role: 'Administrador',
-      })
-
+    if (enviando) {
       return
     }
 
-    if (
-      normalizedUsername === 'recepcion' &&
-      password === '1234'
-    ) {
-      onLogin({
-        name: 'Recepción JP GYM',
-        role: 'Recepción',
-      })
+    setError('')
+    setEnviando(true)
 
-      return
+    try {
+      const sesion = await iniciarSesion(email, password)
+
+      setPassword('')
+      onLogin(convertirSesion(sesion))
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo iniciar sesión.',
+      )
+    } finally {
+      setEnviando(false)
     }
-
-    setError(
-      'Usuario o contraseña incorrectos.',
-    )
-  }
-
-  function loginAsAdmin() {
-    setUsername('admin')
-    setPassword('1234')
-    setError('')
-  }
-
-  function loginAsReception() {
-    setUsername('recepcion')
-    setPassword('1234')
-    setError('')
   }
 
   return (
@@ -99,141 +87,76 @@ export default function LoginPage({
         </div>
 
         <div className="rounded-3xl border border-zinc-800 bg-white p-6 shadow-2xl sm:p-8">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-[#E11D2E]">
-              Acceso
-            </p>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-[#E11D2E]">
+            Acceso
+          </p>
 
-            <h2 className="mt-2 text-2xl font-bold text-zinc-900">
-              Iniciar sesión
-            </h2>
+          <h2 className="mt-2 text-2xl font-bold text-zinc-900">
+            Iniciar sesión
+          </h2>
 
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
-              Ingresa tus credenciales para acceder al sistema.
-            </p>
-          </div>
+          <p className="mt-2 text-sm leading-6 text-zinc-500">
+            Ingresa el correo y la contraseña de tu cuenta.
+          </p>
 
           {error && (
-            <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div
+              role="alert"
+              className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+            >
               {error}
             </div>
           )}
 
-          <form
-            onSubmit={handleSubmit}
-            className="mt-6"
-          >
-            <div>
-              <label className="mb-2 block text-xs font-semibold text-zinc-700">
-                Usuario
-              </label>
+          <form onSubmit={handleSubmit} className="mt-6">
+            <label
+              htmlFor="email"
+              className="mb-2 block text-xs font-semibold text-zinc-700"
+            >
+              Correo electrónico
+            </label>
 
-              <input
-                type="text"
-                value={username}
-                onChange={(event) =>
-                  setUsername(
-                    event.target.value,
-                  )
-                }
-                required
-                autoComplete="username"
-                placeholder="Ingresa tu usuario"
-                className="h-12 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none transition focus:border-[#E11D2E] focus:bg-white focus:ring-4 focus:ring-red-100"
-              />
-            </div>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              maxLength={256}
+              autoComplete="username"
+              disabled={enviando}
+              placeholder="correo@ejemplo.com"
+              className="h-12 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none focus:border-[#E11D2E] focus:ring-4 focus:ring-red-100"
+            />
 
-            <div className="mt-5">
-              <label className="mb-2 block text-xs font-semibold text-zinc-700">
-                Contraseña
-              </label>
+            <label
+              htmlFor="password"
+              className="mb-2 mt-5 block text-xs font-semibold text-zinc-700"
+            >
+              Contraseña
+            </label>
 
-              <input
-                type="password"
-                value={password}
-                onChange={(event) =>
-                  setPassword(
-                    event.target.value,
-                  )
-                }
-                required
-                autoComplete="current-password"
-                placeholder="••••••••"
-                className="h-12 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none transition focus:border-[#E11D2E] focus:bg-white focus:ring-4 focus:ring-red-100"
-              />
-            </div>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              maxLength={128}
+              autoComplete="current-password"
+              disabled={enviando}
+              className="h-12 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none focus:border-[#E11D2E] focus:ring-4 focus:ring-red-100"
+            />
 
             <button
               type="submit"
-              className="mt-6 h-12 w-full rounded-xl bg-[#E11D2E] text-sm font-semibold text-white transition hover:bg-[#C91828]"
+              disabled={enviando}
+              className="mt-6 h-12 w-full rounded-xl bg-[#E11D2E] text-sm font-semibold text-white hover:bg-[#C91828] disabled:cursor-wait disabled:opacity-60"
             >
-              Iniciar sesión
+              {enviando ? 'Ingresando…' : 'Iniciar sesión'}
             </button>
           </form>
-
-          <div className="mt-7 border-t border-zinc-100 pt-6">
-            <p className="text-center text-xs font-semibold text-zinc-500">
-              Accesos de demostración
-            </p>
-
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={loginAsAdmin}
-                className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-left transition hover:border-zinc-300 hover:bg-zinc-100"
-              >
-                <p className="text-xs font-semibold text-zinc-900">
-                  Administrador
-                </p>
-
-                <p className="mt-1 text-[11px] text-zinc-500">
-                  Acceso completo
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={loginAsReception}
-                className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-left transition hover:border-zinc-300 hover:bg-zinc-100"
-              >
-                <p className="text-xs font-semibold text-zinc-900">
-                  Recepción
-                </p>
-
-                <p className="mt-1 text-[11px] text-zinc-500">
-                  Operaciones diarias
-                </p>
-              </button>
-            </div>
-
-            <div className="mt-4 rounded-xl bg-zinc-50 p-4 text-xs leading-6 text-zinc-500">
-              <p>
-                Administrador:
-                <strong className="ml-1 text-zinc-700">
-                  admin
-                </strong>
-              </p>
-
-              <p>
-                Recepción:
-                <strong className="ml-1 text-zinc-700">
-                  recepcion
-                </strong>
-              </p>
-
-              <p>
-                Contraseña:
-                <strong className="ml-1 text-zinc-700">
-                  1234
-                </strong>
-              </p>
-            </div>
-          </div>
         </div>
-
-        <p className="mt-6 text-center text-[11px] text-zinc-600">
-          Versión de demostración
-        </p>
       </div>
     </main>
   )

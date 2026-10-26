@@ -1,276 +1,279 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-type PaymentMethod =
-  | 'Efectivo'
-  | 'Tarjeta'
-  | 'Transferencia'
+import { listarPagos } from '../../services/payments'
+import type { ListaPagos } from '../../services/payments'
 
-type Payment = {
-  id: number
-  member: string
-  code: string
-  amount: number
-  method: PaymentMethod
-  paymentDate: string
-  period: string
+import {
+  descargarComprobante,
+  dinero,
+  fecha,
+  fechaPago,
+  mensaje,
+  ultimoDia,
+} from '../../services/members'
+
+function nombreMetodo(metodo: number): string {
+  switch (metodo) {
+    case 1:
+      return 'Efectivo'
+    case 2:
+      return 'Tarjeta'
+    case 3:
+      return 'Transferencia'
+    default:
+      return 'Desconocido'
+  }
 }
 
-const payments: Payment[] = [
-  {
-    id: 1,
-    member: 'Jhonatan Rodríguez',
-    code: 'JP-A012',
-    amount: 1500,
-    method: 'Efectivo',
-    paymentDate: '05/10/2026 08:20 AM',
-    period: '05 oct - 04 nov 2026',
-  },
-  {
-    id: 2,
-    member: 'Yudelkis Hernández',
-    code: 'JP-A013',
-    amount: 1500,
-    method: 'Tarjeta',
-    paymentDate: '05/10/2026 09:32 AM',
-    period: '05 oct - 04 nov 2026',
-  },
-  {
-    id: 3,
-    member: 'Miguel Batista',
-    code: 'JP-A014',
-    amount: 1400,
-    method: 'Transferencia',
-    paymentDate: '04/10/2026 05:15 PM',
-    period: '08 oct - 07 nov 2026',
-  },
-  {
-    id: 4,
-    member: 'Paola Alcántara',
-    code: 'JP-A015',
-    amount: 1500,
-    method: 'Efectivo',
-    paymentDate: '03/10/2026 06:44 PM',
-    period: '03 oct - 02 nov 2026',
-  },
-]
-
 export default function PaymentsPage() {
-  const [search, setSearch] = useState('')
-  const [method, setMethod] = useState<
-    PaymentMethod | ''
-  >('')
+  const [busqueda, setBusqueda] = useState('')
+  const [metodo, setMetodo] = useState('')
+  const [pagina, setPagina] = useState(1)
+  const [revision, setRevision] = useState(0)
 
-  const filtered = useMemo(() => {
-    const term =
-      search.trim().toLowerCase()
+  const [resultado, setResultado] = useState<ListaPagos | null>(null)
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState('')
 
-    return payments.filter((payment) => {
-      const matchesSearch =
-        !term ||
-        payment.member
-          .toLowerCase()
-          .includes(term) ||
-        payment.code
-          .toLowerCase()
-          .includes(term)
+  const [descargando, setDescargando] = useState<string | null>(null)
+  const [errorDescarga, setErrorDescarga] = useState('')
 
-      const matchesMethod =
-        !method ||
-        payment.method === method
+  const bloqueoDescarga = useRef(false)
 
-      return (
-        matchesSearch &&
-        matchesMethod
+  useEffect(() => {
+    const controller = new AbortController()
+
+    setCargando(true)
+    setError('')
+    setResultado(null)
+
+    const temporizador = window.setTimeout(() => {
+      listarPagos(
+        busqueda,
+        metodo,
+        pagina,
+        controller.signal,
       )
-    })
-  }, [search, method])
+        .then((datos) => {
+          if (controller.signal.aborted) return
 
-  const total = filtered.reduce(
-    (sum, payment) =>
-      sum + payment.amount,
-    0,
-  )
+          if (
+            datos.totalPaginas > 0 &&
+            pagina > datos.totalPaginas
+          ) {
+            setPagina(datos.totalPaginas)
+            return
+          }
+
+          setResultado(datos)
+        })
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) {
+            setError(mensaje(error))
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setCargando(false)
+          }
+        })
+    }, 350)
+
+    return () => {
+      window.clearTimeout(temporizador)
+      controller.abort()
+    }
+  }, [busqueda, metodo, pagina, revision])
+
+  async function descargar(pagoId: string) {
+    if (bloqueoDescarga.current) return
+
+    bloqueoDescarga.current = true
+    setDescargando(pagoId)
+    setErrorDescarga('')
+
+    try {
+      await descargarComprobante(pagoId)
+    } catch (error: unknown) {
+      setErrorDescarga(mensaje(error))
+    } finally {
+      bloqueoDescarga.current = false
+      setDescargando(null)
+    }
+  }
 
   return (
     <section>
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-          Finanzas
-        </p>
+      <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+        Finanzas
+      </p>
 
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-          Pagos
-        </h1>
+      <h1 className="mt-2 text-3xl font-extrabold sm:text-4xl">
+        Pagos
+      </h1>
 
-        <p className="mt-3 text-sm text-zinc-500">
-          Consulta los pagos registrados
-          de las mensualidades.
-        </p>
+      <p className="mt-3 text-sm text-zinc-500">
+        Consulta los cobros registrados de membresías y descarga
+        sus comprobantes disponibles.
+      </p>
+
+      <div className="mt-7 grid gap-4 sm:grid-cols-2">
+        <Resumen
+          titulo="Pagos que cumplen los filtros"
+          valor={resultado ? String(resultado.totalRegistros) : '—'}
+        />
+
+        <Resumen
+          titulo="Importe total que cumple los filtros"
+          valor={resultado ? dinero(resultado.totalMonto) : '—'}
+        />
       </div>
 
-      <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <p className="text-xs text-zinc-500">
-            Pagos visibles
-          </p>
+      {error && (
+        <p
+          role="alert"
+          className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700"
+        >
+          {error}
+        </p>
+      )}
 
-          <p className="mt-2 text-3xl font-bold">
-            {filtered.length}
-          </p>
-        </div>
+      {errorDescarga && (
+        <p
+          role="alert"
+          className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700"
+        >
+          {errorDescarga}
+        </p>
+      )}
 
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <p className="text-xs text-zinc-500">
-            Total mostrado
-          </p>
-
-          <p className="mt-2 text-3xl font-bold">
-            RD$
-            {total.toLocaleString(
-              'es-DO',
-              {
-                minimumFractionDigits: 2,
-              },
-            )}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="grid grid-cols-1 gap-4 border-b border-zinc-100 p-5 sm:grid-cols-2">
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-zinc-600">
-              Buscar
-            </label>
-
+      <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        <div className="grid gap-4 border-b border-zinc-100 p-5 sm:grid-cols-[1fr_1fr_auto]">
+          <label className="text-xs font-semibold text-zinc-600">
+            Buscar por nombre o código
             <input
               type="search"
-              value={search}
-              onChange={(event) =>
-                setSearch(
-                  event.target.value,
-                )
-              }
+              maxLength={150}
+              value={busqueda}
+              onChange={(event) => {
+                setBusqueda(event.target.value)
+                setPagina(1)
+              }}
               placeholder="Nombre o código..."
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none focus:border-[#E11D2E]"
+              className="mt-2 h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm"
             />
-          </div>
+          </label>
 
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-zinc-600">
-              Método
-            </label>
-
+          <label className="text-xs font-semibold text-zinc-600">
+            Método de pago
             <select
-              value={method}
-              onChange={(event) =>
-                setMethod(
-                  event.target
-                    .value as
-                    | PaymentMethod
-                    | '',
-                )
-              }
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none focus:border-[#E11D2E]"
+              value={metodo}
+              onChange={(event) => {
+                setMetodo(event.target.value)
+                setPagina(1)
+              }}
+              className="mt-2 h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm"
             >
-              <option value="">
-                Todos
-              </option>
-
-              <option value="Efectivo">
-                Efectivo
-              </option>
-
-              <option value="Tarjeta">
-                Tarjeta
-              </option>
-
-              <option value="Transferencia">
-                Transferencia
-              </option>
+              <option value="">Todos</option>
+              <option value="1">Efectivo</option>
+              <option value="2">Tarjeta</option>
+              <option value="3">Transferencia</option>
             </select>
-          </div>
+          </label>
+
+          <button
+            type="button"
+            disabled={cargando}
+            onClick={() => setRevision((actual) => actual + 1)}
+            className="h-11 self-end rounded-xl border border-zinc-200 px-4 text-sm disabled:opacity-40"
+          >
+            Actualizar
+          </button>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="border-b border-zinc-100 bg-zinc-50 text-xs uppercase text-zinc-500">
+          <table className="w-full min-w-[1050px] text-left text-sm">
+            <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
-                <th className="px-5 py-4">
-                  Miembro
-                </th>
-
-                <th className="px-5 py-4">
-                  Código
-                </th>
-
-                <th className="px-5 py-4">
-                  Período
-                </th>
-
-                <th className="px-5 py-4">
-                  Método
-                </th>
-
-                <th className="px-5 py-4">
-                  Fecha pago
-                </th>
-
-                <th className="px-5 py-4 text-right">
-                  Monto
-                </th>
+                <th className="p-4">Miembro</th>
+                <th className="p-4">Código</th>
+                <th className="p-4">Plan y período</th>
+                <th className="p-4">Método</th>
+                <th className="p-4">Fecha de pago</th>
+                <th className="p-4 text-right">Monto</th>
+                <th className="p-4">Comprobante</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-zinc-100">
-              {filtered.map(
-                (payment) => (
-                  <tr
-                    key={payment.id}
-                    className="hover:bg-zinc-50"
-                  >
-                    <td className="px-5 py-4 font-semibold">
-                      {payment.member}
+              {cargando && (
+                <tr>
+                  <td colSpan={7} className="p-6 text-zinc-500">
+                    Consultando pagos…
+                  </td>
+                </tr>
+              )}
+
+              {!cargando &&
+                resultado?.pagos.map((pago) => (
+                  <tr key={pago.id} className="hover:bg-zinc-50">
+                    <td className="p-4 font-semibold">
+                      {pago.nombreMiembro}
                     </td>
 
-                    <td className="px-5 py-4 text-zinc-600">
-                      {payment.code}
+                    <td className="p-4 text-zinc-600">
+                      {pago.codigoMiembro}
                     </td>
 
-                    <td className="px-5 py-4 text-zinc-600">
-                      {payment.period}
+                    <td className="p-4">
+                      <p className="font-medium">{pago.nombrePlan}</p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {fecha(pago.fechaInicio)}
+                        {' — '}
+                        {ultimoDia(pago.fechaFinExclusiva)}
+                      </p>
                     </td>
 
-                    <td className="px-5 py-4">
-                      <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium">
-                        {payment.method}
-                      </span>
+                    <td className="p-4">
+                      {nombreMetodo(pago.metodo)}
                     </td>
 
-                    <td className="px-5 py-4 text-zinc-600">
-                      {payment.paymentDate}
+                    <td className="p-4 text-zinc-600">
+                      {fechaPago(pago.fechaPago)}
                     </td>
 
-                    <td className="px-5 py-4 text-right font-semibold">
-                      RD$
-                      {payment.amount.toLocaleString(
-                        'es-DO',
-                        {
-                          minimumFractionDigits: 2,
-                        },
+                    <td className="p-4 text-right font-semibold">
+                      {dinero(pago.monto)}
+                    </td>
+
+                    <td className="p-4">
+                      {pago.comprobanteId ? (
+                        <button
+                          type="button"
+                          disabled={descargando !== null}
+                          onClick={() => void descargar(pago.id)}
+                          className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-semibold disabled:opacity-40"
+                        >
+                          {descargando === pago.id
+                            ? 'Descargando…'
+                            : 'Descargar PDF'}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-zinc-500">
+                          Sin comprobante disponible
+                        </span>
                       )}
                     </td>
                   </tr>
-                ),
-              )}
+                ))}
 
-              {filtered.length === 0 && (
+              {!cargando && resultado?.totalRegistros === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
-                    className="px-5 py-10 text-center text-zinc-500"
+                    colSpan={7}
+                    className="p-8 text-center text-zinc-500"
                   >
-                    No se encontraron pagos.
+                    No se encontraron pagos con estos filtros.
                   </td>
                 </tr>
               )}
@@ -278,10 +281,54 @@ export default function PaymentsPage() {
           </table>
         </div>
 
-        <div className="border-t border-zinc-100 px-5 py-4 text-xs text-zinc-500">
-          Datos ficticios para la interfaz.
-        </div>
+        {resultado && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 p-4 text-sm">
+            <span>
+              Página {resultado.pagina} de{' '}
+              {Math.max(1, resultado.totalPaginas)}
+              {' · '}
+              {resultado.pagos.length} pagos en esta página
+            </span>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={cargando || pagina <= 1}
+                onClick={() => setPagina((actual) => actual - 1)}
+                className="rounded-lg border px-3 py-2 disabled:opacity-40"
+              >
+                Anterior
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  cargando || pagina >= resultado.totalPaginas
+                }
+                onClick={() => setPagina((actual) => actual + 1)}
+                className="rounded-lg border px-3 py-2 disabled:opacity-40"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
+  )
+}
+
+function Resumen({
+  titulo,
+  valor,
+}: {
+  titulo: string
+  valor: string
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5">
+      <p className="text-xs text-zinc-500">{titulo}</p>
+      <p className="mt-2 text-3xl font-bold">{valor}</p>
+    </div>
   )
 }

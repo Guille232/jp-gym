@@ -1,607 +1,602 @@
-import { useState } from 'react'
+import { useEffect, useState } from "react";
 
-import MemberEditForm from './MemberEditForm'
-import MembershipForm from './MembershipForm'
-import PaymentReceipt from './PaymentReceipt'
-import MemberQrCode from './MemberQrCode'
+import MemberEditForm from "./MemberEditForm";
+import type { MemberEditData } from "./MemberEditForm";
+
+import MembershipForm from "./MembershipForm";
+import type { MembershipFormData } from "./MembershipForm";
+
+import MemberQrCode from "./MemberQrCode";
+import CrearPlanPanel from "./CrearPlanPanel";
+
+import {
+  consultarHistorial,
+  consultarAcceso,
+  listarPlanes,
+  editarMiembro,
+  eliminarMiembro,
+  contratar,
+  descargarComprobante,
+  dinero,
+  fecha,
+  fechaPago,
+  ultimoDia,
+  mensaje,
+  obtenerMiembro,
+} from "../../services/members";
 
 import type {
-  MemberEditData,
-} from './MemberEditForm'
+  MiembroResponse,
+  Historial,
+  Plan,
+  Acceso,
+} from "../../services/members";
 
-import type {
-  MembershipFormData,
-  MembershipRecord,
-} from './MembershipForm'
-
-import type {
-  ReceiptData,
-} from './PaymentReceipt'
-
-export type MemberDetailData = {
-  id: number
-  code: string
-  name: string
-  phone: string
-  cedula: string
-  age: number
-  address: string
-  status:
-    | 'Activo'
-    | 'Por vencer'
-    | 'Sin membresía'
-  membershipHistory: MembershipRecord[]
-}
-
-type MemberDetailProps = {
-  member: MemberDetailData
-  monthlyFee: number
-  onBack: () => void
-  onEdit: (
-    memberId: number,
-    data: MemberEditData,
-  ) => void
-  onDelete: (
-    memberId: number,
-  ) => void
-  onRegisterMembership: (
-    memberId: number,
-    data: MembershipFormData,
-  ) => MembershipRecord
-}
+type Props = {
+  member: MiembroResponse;
+  esAdministrador: boolean;
+  onBack: () => void;
+  onUpdated: (miembro: MiembroResponse) => void;
+  onDeleted: () => void;
+};
 
 export default function MemberDetail({
   member,
-  monthlyFee,
+  esAdministrador,
   onBack,
-  onEdit,
-  onDelete,
-  onRegisterMembership,
-}: MemberDetailProps) {
-  const [editing, setEditing] =
-    useState(false)
+  onUpdated,
+  onDeleted,
+}: Props) {
+  const [modo, setModo] = useState<"ver" | "editar" | "contratar">(
+    "ver",
+  );
 
-  const [membershipMode, setMembershipMode] =
-    useState<
-      'enroll' | 'renew' | null
-    >(null)
+  const [historial, setHistorial] = useState<Historial | null>(null);
+  const [planes, setPlanes] = useState<Plan[]>([]);
+  const [acceso, setAcceso] = useState<Acceso | null>(null);
 
-  const [showDelete, setShowDelete] =
-    useState(false)
+  const [pagina, setPagina] = useState(1);
+  const [revision, setRevision] = useState(0);
 
-  const [showQr, setShowQr] =
-    useState(false)
+  const [cargando, setCargando] = useState(true);
+  const [ocupado, setOcupado] = useState(false);
 
-  const [receipt, setReceipt] =
-    useState<ReceiptData | null>(
-      null,
-    )
+  const [error, setError] = useState("");
+  const [aviso, setAviso] = useState("");
 
-  const latestMembership =
-    member.membershipHistory[0]
+  const [confirmarBorrado, setConfirmarBorrado] = useState(false);
+  const [mostrarQr, setMostrarQr] = useState(false);
 
-  function handleMembershipConfirm(
-    data: MembershipFormData,
-  ) {
-    const created =
-      onRegisterMembership(
-        member.id,
-        data,
-      )
+  useEffect(() => {
+    const controller = new AbortController();
 
-    setMembershipMode(null)
+    setCargando(true);
+    setError("");
+    setHistorial(null);
+    setAcceso(null);
+    setPlanes([]);
 
-    setReceipt({
-      receiptNumber:
-        created.receiptNumber,
-      memberName: member.name,
-      memberCode: member.code,
-      amount: created.agreedPrice,
-      method: created.method,
-      paymentDate:
-        created.paymentDate,
-      periodStart:
-        created.startDate,
-      periodEnd:
-        created.endDate,
-    })
-  }
+    Promise.all([
+      consultarHistorial(member.id, pagina, controller.signal),
+      consultarAcceso(member.codigoBarras, controller.signal),
+      listarPlanes(controller.signal),
+    ])
+      .then(([nuevoHistorial, nuevoAcceso, nuevosPlanes]) => {
+        if (controller.signal.aborted) return;
 
-  function showReceiptForRecord(
-    record: MembershipRecord,
-  ) {
-    setReceipt({
-      receiptNumber:
-        record.receiptNumber,
-      memberName: member.name,
-      memberCode: member.code,
-      amount: record.agreedPrice,
-      method: record.method,
-      paymentDate:
-        record.paymentDate,
-      periodStart:
-        record.startDate,
-      periodEnd:
-        record.endDate,
-    })
-  }
-
-  if (receipt) {
-    return (
-      <PaymentReceipt
-        receipt={receipt}
-        onClose={() =>
-          setReceipt(null)
+        setHistorial(nuevoHistorial);
+        setAcceso(nuevoAcceso);
+        setPlanes(nuevosPlanes.filter((plan) => plan.activo));
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(mensaje(error));
         }
-      />
-    )
-  }
-
-  if (editing) {
-    return (
-      <MemberEditForm
-        member={{
-          name: member.name,
-          phone: member.phone,
-          cedula: member.cedula,
-          age: member.age,
-          address: member.address,
-        }}
-        onCancel={() =>
-          setEditing(false)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setCargando(false);
         }
-        onSave={(data) => {
-          onEdit(member.id, data)
-          setEditing(false)
-        }}
-      />
-    )
+      });
+
+    return () => controller.abort();
+  }, [member.id, member.codigoBarras, pagina, revision]);
+
+  async function editar(datos: MemberEditData) {
+    await editarMiembro(member.id, {
+      nombreCompleto: datos.name,
+      telefono: datos.phone,
+      numeroDocumento: datos.cedula.trim() || null,
+      edad: datos.age,
+      direccion: datos.address.trim() || null,
+    });
+
+    onUpdated({
+      ...member,
+      nombreCompleto: datos.name.trim(),
+      telefono: datos.phone.trim(),
+      numeroDocumento: datos.cedula.trim() || null,
+      edadAlRegistrarse: datos.age,
+      eraMenorAlRegistrarse: datos.age < 18,
+      direccion: datos.address.trim() || null,
+    });
+
+    setModo("ver");
+    setAviso("Datos actualizados.");
+    setRevision((actual) => actual + 1);
   }
 
-  if (membershipMode) {
+  async function pagar(datos: MembershipFormData) {
+    const resultado = await contratar(
+      member.id,
+      datos.planId,
+      datos.agreedPrice,
+      datos.method,
+      datos.reason || null,
+    );
+
+    setModo("ver");
+    setPagina(1);
+    setRevision((actual) => actual + 1);
+
+    setAviso(
+      resultado.numeroComprobante
+        ? `Pago registrado. Comprobante: ${resultado.numeroComprobante}. Descárgalo desde el historial.`
+        : "Membresía y pago registrados correctamente.",
+    );
+  }
+
+  async function borrar() {
+    if (ocupado) return;
+
+    setOcupado(true);
+    setError("");
+
+    try {
+      await eliminarMiembro(member.id);
+      onDeleted();
+    } catch (error: unknown) {
+      setError(mensaje(error));
+      setOcupado(false);
+    }
+  }
+
+  async function descargar(pagoId: string) {
+    if (ocupado) return;
+
+    setOcupado(true);
+    setError("");
+
+    try {
+      await descargarComprobante(pagoId);
+    } catch (error: unknown) {
+      setError(mensaje(error));
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function refrescar() {
+    if (ocupado) return;
+
+    setOcupado(true);
+    setError("");
+
+    try {
+      const actualizado = await obtenerMiembro(member.id);
+      onUpdated(actualizado);
+      setRevision((actual) => actual + 1);
+    } catch (error: unknown) {
+      setError(mensaje(error));
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  if (modo === "editar") {
+    return (
+      <section>
+        <MemberEditForm
+          member={{
+            name: member.nombreCompleto,
+            phone: member.telefono,
+            cedula: member.numeroDocumento ?? "",
+            age: member.edadAlRegistrarse,
+            address: member.direccion ?? "",
+          }}
+          onCancel={() => setModo("ver")}
+          onSave={editar}
+        />
+      </section>
+    );
+  }
+
+  if (modo === "contratar") {
     return (
       <MembershipForm
-        monthlyFee={monthlyFee}
-        mode={membershipMode}
-        onCancel={() =>
-          setMembershipMode(null)
+        plans={planes}
+        mode={
+          historial && historial.totalRegistros > 0
+            ? "renew"
+            : "enroll"
         }
-        onConfirm={
-          handleMembershipConfirm
-        }
+        onCancel={() => setModo("ver")}
+        onConfirm={pagar}
       />
-    )
+    );
   }
 
   return (
     <section>
       <button
         type="button"
+        disabled={ocupado}
         onClick={onBack}
-        className="mb-5 text-sm font-semibold text-zinc-500 transition hover:text-zinc-900"
+        className="mb-5 text-sm font-semibold text-zinc-500 disabled:opacity-40"
       >
         ← Volver a miembros
       </button>
 
-      {/* Perfil */}
-      <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-start gap-4">
-            <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-[#0D0D0D] text-lg font-bold text-white">
-              {member.name
-                .split(' ')
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((word) =>
-                  word
-                    .charAt(0)
-                    .toUpperCase(),
-                )
-                .join('')}
-            </div>
+      {error && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl bg-red-50 p-4 text-red-700"
+        >
+          {error}
 
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold text-zinc-900">
-                  {member.name}
-                </h1>
+          <button
+            type="button"
+            onClick={() => void refrescar()}
+            disabled={ocupado || cargando}
+            className="ml-3 underline disabled:opacity-40"
+          >
+            Actualizar ficha
+          </button>
+        </div>
+      )}
 
-                <StatusBadge
-                  status={
-                    member.status
-                  }
-                />
-              </div>
+      {aviso && (
+        <p
+          role="status"
+          className="mb-4 rounded-xl bg-emerald-50 p-4 text-emerald-800"
+        >
+          {aviso}
+        </p>
+      )}
 
-              <p className="mt-2 text-sm font-semibold text-zinc-500">
-                {member.code}
-              </p>
-            </div>
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">
+              {member.nombreCompleto}
+            </h1>
+
+            <p className="mt-2 font-mono text-zinc-500">
+              {member.codigoBarras}
+            </p>
+
+            <p className="mt-2 text-sm">
+              Registro: {member.activo ? "Habilitado" : "Inactivo"}
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() =>
-                setShowQr(
-                  (current) =>
-                    !current,
-                )
-              }
-              className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+              onClick={() => setMostrarQr((actual) => !actual)}
+              className="rounded-xl border px-4 py-2"
             >
-              {showQr
-                ? 'Ocultar QR'
-                : 'Ver QR'}
+              {mostrarQr ? "Ocultar QR" : "Ver QR"}
             </button>
 
             <button
               type="button"
-              onClick={() =>
-                setEditing(true)
-              }
-              className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+              disabled={ocupado}
+              onClick={() => setModo("editar")}
+              className="rounded-xl border px-4 py-2 disabled:opacity-40"
             >
               Editar
             </button>
 
-            <button
-              type="button"
-              onClick={() =>
-                setShowDelete(true)
-              }
-              className="h-10 rounded-xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-600 hover:bg-red-100"
-            >
-              Eliminar
-            </button>
+            {esAdministrador && (
+              <button
+                type="button"
+                disabled={ocupado}
+                onClick={() => setConfirmarBorrado(true)}
+                className="rounded-xl border border-red-200 px-4 py-2 text-red-600 disabled:opacity-40"
+              >
+                Eliminar
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-px border-t border-zinc-100 bg-zinc-100 sm:grid-cols-2 lg:grid-cols-4">
-          <MemberInfo
-            label="Teléfono"
-            value={member.phone}
-          />
+        <dl className="mt-6 grid gap-5 border-t pt-5 sm:grid-cols-2 lg:grid-cols-4">
+          <Info label="Teléfono" value={member.telefono} />
 
-          <MemberInfo
+          <Info
             label="Cédula / Documento"
-            value={
-              member.cedula ||
-              'No registrado'
-            }
+            value={member.numeroDocumento ?? "No registrado"}
           />
 
-          <MemberInfo
-            label="Edad"
-            value={`${member.age} años`}
+          <Info
+            label="Edad al registrarse"
+            value={`${member.edadAlRegistrarse} años`}
           />
 
-          <MemberInfo
+          <Info
             label="Dirección"
-            value={
-              member.address ||
-              'No registrada'
-            }
+            value={member.direccion ?? "No registrada"}
           />
-        </div>
+        </dl>
       </div>
 
-      {/* QR */}
-      {showQr && (
-        <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-[#E11D2E]">
-                Identificación
-              </p>
-
-              <h2 className="mt-2 text-xl font-bold text-zinc-900">
-                QR del miembro
-              </h2>
-
-              <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">
-                Este QR contiene el código permanente del miembro. Puede
-                escanearse directamente en Check-in para consultar su acceso.
-              </p>
-
-              <div className="mt-4 rounded-xl bg-zinc-50 p-4">
-                <p className="text-xs text-zinc-500">
-                  Código contenido en el QR
-                </p>
-
-                <p className="mt-1 font-mono text-lg font-bold tracking-wider text-zinc-900">
-                  {member.code}
-                </p>
-              </div>
-            </div>
-
-            <MemberQrCode
-              code={member.code}
-              memberName={
-                member.name
-              }
-              size={170}
-            />
-          </div>
+      {mostrarQr && (
+        <div className="mt-5">
+          <MemberQrCode
+            code={member.codigoBarras}
+            memberName={member.nombreCompleto}
+          />
         </div>
       )}
 
-      {/* Eliminar */}
-      {showDelete && (
-        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-5">
-          <h2 className="font-semibold text-red-700">
-            ¿Eliminar miembro?
+      {confirmarBorrado && (
+        <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-5">
+          <h2 className="font-bold">
+            ¿Eliminar a {member.nombreCompleto}?
           </h2>
 
-          <p className="mt-2 text-sm text-zinc-700">
-            Se eliminará a{' '}
-            <strong>
-              {member.name}
-            </strong>{' '}
-            únicamente de esta demostración.
+          <p className="mt-2 text-sm">
+            El servidor solo permite eliminar miembros sin historial
+            asociado.
           </p>
 
-          <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <div className="mt-4 flex gap-3">
             <button
               type="button"
-              onClick={() =>
-                setShowDelete(false)
-              }
-              className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-600"
+              disabled={ocupado}
+              onClick={() => setConfirmarBorrado(false)}
+              className="rounded-xl border bg-white px-4 py-2 disabled:opacity-40"
             >
               Cancelar
             </button>
 
             <button
               type="button"
-              onClick={() =>
-                onDelete(member.id)
-              }
-              className="h-10 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white"
+              disabled={ocupado}
+              onClick={() => void borrar()}
+              className="rounded-xl bg-red-600 px-4 py-2 text-white disabled:opacity-40"
             >
-              Sí, eliminar
+              {ocupado ? "Procesando…" : "Sí, eliminar"}
             </button>
           </div>
         </div>
       )}
 
-      {/* Membresía */}
-      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-zinc-100 p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="font-semibold text-zinc-900">
-              Membresía
-            </h2>
+            <h2 className="font-bold">Acceso actual</h2>
 
-            <p className="mt-1 text-xs text-zinc-500">
-              Estado actual y renovación.
+            <p
+              className={`mt-2 text-sm ${
+                acceso?.accesoPermitido
+                  ? "text-emerald-700"
+                  : "text-zinc-600"
+              }`}
+            >
+              {cargando
+                ? "Consultando acceso…"
+                : acceso
+                  ? `${
+                      acceso.accesoPermitido
+                        ? "Permitido"
+                        : "No permitido"
+                    }: ${acceso.motivo}`
+                  : "No se pudo comprobar el acceso."}
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() =>
-              setMembershipMode(
-                latestMembership
-                  ? 'renew'
-                  : 'enroll',
-              )
-            }
-            className="h-10 rounded-xl bg-[#E11D2E] px-4 text-sm font-semibold text-white hover:bg-[#C91828]"
-          >
-            {latestMembership
-              ? 'Renovar membresía'
-              : 'Contratar membresía'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={ocupado || cargando}
+              onClick={() => void refrescar()}
+              className="rounded-xl border border-zinc-200 px-4 py-3 text-sm font-semibold disabled:opacity-40"
+            >
+              Actualizar ficha
+            </button>
+
+            <button
+              type="button"
+              disabled={
+                cargando ||
+                ocupado ||
+                !member.activo ||
+                planes.length === 0
+              }
+              onClick={() => setModo("contratar")}
+              className="rounded-xl bg-[#E11D2E] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {historial && historial.totalRegistros > 0
+                ? "Renovar membresía"
+                : "Contratar membresía"}
+            </button>
+          </div>
         </div>
 
-        {latestMembership ? (
-          <div className="grid grid-cols-1 gap-px bg-zinc-100 sm:grid-cols-2 lg:grid-cols-4">
-            <MemberInfo
-              label="Plan"
-              value={
-                latestMembership.planName
-              }
-            />
+        {!cargando && planes.length === 0 && (
+          <p className="mt-3 text-sm text-amber-700">
+            No hay planes activos disponibles o no pudieron cargarse.
+          </p>
+        )}
 
-            <MemberInfo
-              label="Pagado"
-              value={`RD$${latestMembership.agreedPrice.toLocaleString(
-                'es-DO',
-                {
-                  minimumFractionDigits: 2,
-                },
-              )}`}
-            />
-
-            <MemberInfo
-              label="Método"
-              value={
-                latestMembership.method
-              }
-            />
-
-            <MemberInfo
-              label="Período"
-              value={`${latestMembership.startDate} - ${latestMembership.endDate}`}
-            />
-          </div>
-        ) : (
-          <div className="p-6 text-sm text-zinc-500">
-            Este miembro todavía no tiene una membresía contratada.
-          </div>
+        {esAdministrador && !ocupado && (
+          <CrearPlanPanel />
         )}
       </div>
 
-      {/* Historial */}
       <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-100 p-5">
-          <h2 className="font-semibold text-zinc-900">
-            Membresías y pagos
-          </h2>
-
-          <p className="mt-1 text-xs text-zinc-500">
-            Historial de períodos contratados y pagos realizados.
-          </p>
-        </div>
+        <h2 className="p-5 font-bold">Membresías y pagos</h2>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[950px] text-left text-sm">
-            <thead className="border-b border-zinc-100 bg-zinc-50 text-xs uppercase text-zinc-500">
+          <table className="w-full min-w-[900px] text-left text-sm">
+            <thead className="bg-zinc-50 text-xs text-zinc-500">
               <tr>
-                <th className="px-5 py-4">
-                  Fecha pago
-                </th>
-
-                <th className="px-5 py-4">
-                  Período
-                </th>
-
-                <th className="px-5 py-4">
-                  Precio sugerido
-                </th>
-
-                <th className="px-5 py-4">
-                  Pagado
-                </th>
-
-                <th className="px-5 py-4">
-                  Método
-                </th>
-
-                <th className="px-5 py-4">
-                  Motivo
-                </th>
-
-                <th className="px-5 py-4 text-right">
-                  Comprobante
-                </th>
+                {[
+                  "Plan",
+                  "Período",
+                  "Precio contratado",
+                  "Pago registrado",
+                  "Método",
+                  "Origen",
+                  "Comprobante",
+                ].map((titulo) => (
+                  <th key={titulo} className="p-4">
+                    {titulo}
+                  </th>
+                ))}
               </tr>
             </thead>
 
             <tbody className="divide-y divide-zinc-100">
-              {member.membershipHistory.map(
-                (record) => (
-                  <tr
-                    key={record.id}
-                    className="hover:bg-zinc-50"
-                  >
-                    <td className="px-5 py-4">
-                      {record.paymentDate}
-                    </td>
+              {historial?.membresias.map((membresia) => (
+                <tr key={membresia.id}>
+                  <td className="p-4">
+                    <p>{membresia.nombrePlan}</p>
 
-                    <td className="px-5 py-4 text-zinc-600">
-                      {record.startDate}
-                      {' - '}
-                      {record.endDate}
-                    </td>
+                    {membresia.motivoCambioPrecio && (
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {membresia.motivoCambioPrecio}
+                      </p>
+                    )}
+                  </td>
 
-                    <td className="px-5 py-4">
-                      RD$
-                      {record.suggestedPrice.toLocaleString(
-                        'es-DO',
-                        {
-                          minimumFractionDigits: 2,
-                        },
-                      )}
-                    </td>
+                  <td className="p-4">
+                    {fecha(membresia.fechaInicio)}
+                    {" — "}
+                    {ultimoDia(membresia.fechaFinExclusiva)}
+                  </td>
 
-                    <td className="px-5 py-4 font-semibold">
-                      RD$
-                      {record.agreedPrice.toLocaleString(
-                        'es-DO',
-                        {
-                          minimumFractionDigits: 2,
-                        },
-                      )}
-                    </td>
+                  <td className="p-4">
+                    {dinero(membresia.precioContratado)}
+                  </td>
 
-                    <td className="px-5 py-4">
-                      {record.method}
-                    </td>
+                  <td className="p-4">
+                    {membresia.montoPagado === null
+                      ? "Sin pago registrado en este sistema"
+                      : dinero(membresia.montoPagado)}
 
-                    <td className="px-5 py-4 text-zinc-500">
-                      {record.reason ||
-                        '—'}
-                    </td>
+                    {membresia.fechaPago && (
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {fechaPago(membresia.fechaPago)}
+                      </p>
+                    )}
+                  </td>
 
-                    <td className="px-5 py-4 text-right">
+                  <td className="p-4">
+                    {membresia.metodo === 1
+                      ? "Efectivo"
+                      : membresia.metodo === 2
+                        ? "Tarjeta"
+                        : membresia.metodo === 3
+                          ? "Transferencia"
+                          : "—"}
+                  </td>
+
+                  <td className="p-4">
+                    {membresia.origen === 2
+                      ? "Importación"
+                      : "Sistema"}
+                  </td>
+
+                  <td className="p-4">
+                    {membresia.comprobanteId && membresia.pagoId ? (
                       <button
                         type="button"
+                        disabled={ocupado}
                         onClick={() =>
-                          showReceiptForRecord(
-                            record,
-                          )
+                          void descargar(membresia.pagoId!)
                         }
-                        className="text-xs font-semibold text-[#E11D2E] hover:underline"
+                        className="font-semibold text-[#E11D2E] disabled:opacity-50"
                       >
-                        Ver comprobante
+                        Descargar PDF
                       </button>
-                    </td>
-                  </tr>
-                ),
-              )}
+                    ) : (
+                      "No disponible"
+                    )}
+                  </td>
+                </tr>
+              ))}
 
-              {member
-                .membershipHistory
-                .length === 0 && (
+              {!cargando && historial?.totalRegistros === 0 && (
                 <tr>
                   <td
                     colSpan={7}
-                    className="px-5 py-10 text-center text-zinc-500"
+                    className="p-8 text-center text-zinc-500"
                   >
-                    No hay pagos registrados.
+                    No hay membresías registradas.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {cargando && (
+          <p role="status" className="p-5">
+            Cargando historial…
+          </p>
+        )}
+
+        {historial && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t p-4 text-sm">
+            <span>
+              {historial.totalRegistros} membresías · Página{" "}
+              {pagina} de {Math.max(1, historial.totalPaginas)}
+            </span>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={ocupado || cargando || pagina <= 1}
+                onClick={() => setPagina((actual) => actual - 1)}
+                className="rounded-lg border px-3 py-2 disabled:opacity-40"
+              >
+                Anterior
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  ocupado ||
+                  cargando ||
+                  pagina >= historial.totalPaginas
+                }
+                onClick={() => setPagina((actual) => actual + 1)}
+                className="rounded-lg border px-3 py-2 disabled:opacity-40"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
-  )
+  );
 }
 
-function MemberInfo({
+function Info({
   label,
   value,
 }: {
-  label: string
-  value: string
+  label: string;
+  value: string;
 }) {
   return (
-    <div className="bg-white p-5">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-        {label}
-      </p>
-
-      <p className="mt-2 text-sm font-semibold text-zinc-800">
-        {value}
-      </p>
+    <div>
+      <dt className="text-xs text-zinc-500">{label}</dt>
+      <dd className="mt-2 font-semibold">{value}</dd>
     </div>
-  )
-}
-
-function StatusBadge({
-  status,
-}: {
-  status:
-    | 'Activo'
-    | 'Por vencer'
-    | 'Sin membresía'
-}) {
-  const classes =
-    status === 'Activo'
-      ? 'bg-emerald-50 text-emerald-700'
-      : status === 'Por vencer'
-        ? 'bg-amber-50 text-amber-700'
-        : 'bg-zinc-100 text-zinc-600'
-
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${classes}`}
-    >
-      {status}
-    </span>
-  )
+  );
 }

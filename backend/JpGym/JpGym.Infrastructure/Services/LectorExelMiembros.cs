@@ -51,12 +51,19 @@ public class LectorExcelMiembros : ILectorExcelMiembros
             }
         }
 
-        var requeridas = new[]
-        {
-            "id", "nombre", "telefono", "email",
-            "montodelplan", "plan", "fechainicio",
-            "estado", "notas"
-        };
+         var requeridas = new[]
+           {
+            "id",
+            "nombre",
+            "telefono",
+            "email",
+            "montodelplan",
+            "plan",
+            "fechainicio",
+            "fechavencimiento",
+            "estado",
+            "notas"
+              };
 
         foreach (var nombre in requeridas)
         {
@@ -178,6 +185,38 @@ public class LectorExcelMiembros : ILectorExcelMiembros
                     datos.ErroresLectura.Add(
                         "Fecha inicio inválida. Usa una fecha de Excel "
                         + "o texto con formato yyyy-MM-dd o dd/MM/yyyy.");
+                }
+            }
+
+            var textoVencimiento = Texto("fechavencimiento");
+            var celdaVencimiento = fila.Cell(
+                columnas["fechavencimiento"]);
+
+            if (textoVencimiento.Length > 0)
+            {
+                if ((celdaVencimiento.DataType == XLDataType.DateTime
+                     || celdaVencimiento.DataType == XLDataType.Number)
+                    && celdaVencimiento.TryGetValue<DateTime>(
+                        out var vencimiento))
+                {
+                    datos.FechaVencimiento =
+                        DateOnly.FromDateTime(vencimiento);
+                }
+                else if (DateOnly.TryParseExact(
+                    textoVencimiento,
+                    new[] { "yyyy-MM-dd", "dd/MM/yyyy", "d/M/yyyy" },
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var vencimientoTexto))
+                {
+                    datos.FechaVencimiento = vencimientoTexto;
+                }
+                else
+                {
+                    datos.ErroresLectura.Add(
+                        "Fecha de vencimiento inválida. "
+                        + "Usa una fecha de Excel o texto "
+                        + "con formato yyyy-MM-dd o dd/MM/yyyy.");
                 }
             }
 

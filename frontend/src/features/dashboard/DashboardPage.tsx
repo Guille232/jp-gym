@@ -1,386 +1,645 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-type ExpiringMember = {
-  name: string
-  code: string
-  phone: string
-  expires: string
-  status: 'Por vencer' | 'Vencido'
+import {
+  consultarPermisos,
+  dinero,
+  fecha,
+  listarMiembros,
+  mensaje,
+  ultimoDia,
+} from '../../services/members'
+
+import { consultarFinanzas } from '../../services/dailyClosings'
+import type { ResumenFinanciero } from '../../services/dailyClosings'
+
+import { consultarVencimientos } from '../../services/dashboard'
+import type { ResumenVencimientos } from '../../services/dashboard'
+
+type MiembroReciente = {
+  id: string
+  nombreCompleto: string
+  codigoBarras: string
+  fechaRegistro: string
+  activo: boolean
 }
 
-const expiringMembers: ExpiringMember[] = [
-  {
-    name: 'Miguel Batista',
-    code: 'JP-A014',
-    phone: '849-555-0189',
-    expires: '07/10/2026',
-    status: 'Por vencer',
-  },
-  {
-    name: 'Ana Rodríguez',
-    code: 'JP-A021',
-    phone: '809-555-0121',
-    expires: '08/10/2026',
-    status: 'Por vencer',
-  },
-  {
-    name: 'Luis Martínez',
-    code: 'JP-A026',
-    phone: '829-555-0175',
-    expires: '09/10/2026',
-    status: 'Por vencer',
-  },
-  {
-    name: 'Carlos Méndez',
-    code: 'JP-A099',
-    phone: '809-555-0202',
-    expires: '30/09/2026',
-    status: 'Vencido',
-  },
-  {
-    name: 'María Santos',
-    code: 'JP-A088',
-    phone: '849-555-0160',
-    expires: '28/09/2026',
-    status: 'Vencido',
-  },
-  {
-    name: 'José Ramírez',
-    code: 'JP-A074',
-    phone: '829-555-0133',
-    expires: '25/09/2026',
-    status: 'Vencido',
-  },
-]
+type ResumenAsistencia = {
+  fecha: string
+  totalEntradas: number
+  miembrosDistintos: number
+}
 
-const recentMembers = [
-  {
-    name: 'Jhonatan Rodríguez',
-    status: 'Activo',
-    expires: '20/10/2026',
-  },
-  {
-    name: 'Yudelkis Hernández',
-    status: 'Activo',
-    expires: '15/10/2026',
-  },
-  {
-    name: 'Miguel Batista',
-    status: 'Por vencer',
-    expires: '07/10/2026',
-  },
-  {
-    name: 'Carlos Méndez',
-    status: 'Vencido',
-    expires: '30/09/2026',
-  },
-]
+function hoyGym(): string {
+  const partes = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santo_Domingo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+
+  const obtener = (tipo: string) =>
+    partes.find((parte) => parte.type === tipo)?.value ?? ''
+
+  return `${obtener('year')}-${obtener('month')}-${obtener('day')}`
+}
+
+function mostrarRegistro(valor: string): string {
+  return new Intl.DateTimeFormat('es-DO', {
+    timeZone: 'America/Santo_Domingo',
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(valor))
+}
+
+async function consultarAsistencia(
+  dia: string,
+  signal: AbortSignal,
+): Promise<ResumenAsistencia> {
+  const parametros = new URLSearchParams({ fecha: dia })
+
+  const response = await fetch(
+    `/api/v1/attendances/summary?${parametros}`,
+    {
+      credentials: 'include',
+      cache: 'no-store',
+      signal,
+    },
+  )
+
+  if (response.status === 401) {
+    throw new Error('Tu sesión venció. Inicia sesión nuevamente.')
+  }
+
+  if (response.status === 403) {
+    throw new Error('No tienes permiso para consultar la asistencia.')
+  }
+
+  if (!response.ok) {
+    const problema = await response.json().catch(() => null)
+
+    throw new Error(
+      problema?.detail ||
+        problema?.title ||
+        'No se pudo consultar el resumen de asistencia.',
+    )
+  }
+
+  return response.json()
+}
 
 export default function DashboardPage() {
-  const [visibleList, setVisibleList] = useState<
-    'expiring' | 'expired' | null
-  >(null)
+  const [dia, setDia] = useState(hoyGym)
+  const [revision, setRevision] = useState(0)
 
-  const membersToShow =
-    visibleList === 'expiring'
-      ? expiringMembers.filter(
-          (member) => member.status === 'Por vencer',
-        )
-      : visibleList === 'expired'
-        ? expiringMembers.filter(
-            (member) => member.status === 'Vencido',
-          )
-        : []
+  const [administrador, setAdministrador] =
+    useState<boolean | null>(null)
+
+  const [totalMiembros, setTotalMiembros] = useState<number | null>(null)
+  const [recientes, setRecientes] = useState<MiembroReciente[]>([])
+
+  const [asistencia, setAsistencia] =
+    useState<ResumenAsistencia | null>(null)
+
+  const [finanzas, setFinanzas] =
+    useState<ResumenFinanciero | null>(null)
+
+  const [vencimientos, setVencimientos] =
+    useState<ResumenVencimientos | null>(null)
+
+  const [listaVisible, setListaVisible] =
+    useState<'porVencer' | 'vencidos' | null>(null)
+
+  const [cargando, setCargando] = useState(true)
+
+  const [errorGeneral, setErrorGeneral] = useState('')
+  const [errorMiembros, setErrorMiembros] = useState('')
+  const [errorAsistencia, setErrorAsistencia] = useState('')
+  const [errorFinanzas, setErrorFinanzas] = useState('')
+  const [errorVencimientos, setErrorVencimientos] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    setCargando(true)
+    setAdministrador(null)
+
+    setTotalMiembros(null)
+    setRecientes([])
+    setAsistencia(null)
+    setFinanzas(null)
+    setVencimientos(null)
+
+    setErrorGeneral('')
+    setErrorMiembros('')
+    setErrorAsistencia('')
+    setErrorFinanzas('')
+    setErrorVencimientos('')
+
+    async function cargar() {
+      try {
+        const permisos = await consultarPermisos()
+
+        if (controller.signal.aborted) return
+
+        setAdministrador(permisos.esAdministrador)
+
+        await Promise.all([
+          listarMiembros('', 1, 5, controller.signal)
+            .then((resultado) => {
+              if (controller.signal.aborted) return
+
+              setTotalMiembros(resultado.totalRegistros)
+              setRecientes(resultado.miembros)
+            })
+            .catch((error: unknown) => {
+              if (!controller.signal.aborted) {
+                setErrorMiembros(mensaje(error))
+              }
+            }),
+
+          consultarAsistencia(dia, controller.signal)
+            .then((resultado) => {
+              if (!controller.signal.aborted) {
+                setAsistencia(resultado)
+              }
+            })
+            .catch((error: unknown) => {
+              if (!controller.signal.aborted) {
+                setErrorAsistencia(mensaje(error))
+              }
+            }),
+
+          permisos.esAdministrador
+            ? consultarFinanzas(dia, controller.signal)
+                .then((resultado) => {
+                  if (!controller.signal.aborted) {
+                    setFinanzas(resultado)
+                  }
+                })
+                .catch((error: unknown) => {
+                  if (!controller.signal.aborted) {
+                    setErrorFinanzas(mensaje(error))
+                  }
+                })
+            : Promise.resolve(),
+
+          permisos.esAdministrador
+            ? consultarVencimientos(controller.signal)
+                .then((resultado) => {
+                  if (!controller.signal.aborted) {
+                    setVencimientos(resultado)
+                  }
+                })
+                .catch((error: unknown) => {
+                  if (!controller.signal.aborted) {
+                    setErrorVencimientos(mensaje(error))
+                  }
+                })
+            : Promise.resolve(),
+        ])
+      } catch (error: unknown) {
+        if (!controller.signal.aborted) {
+          setErrorGeneral(mensaje(error))
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setCargando(false)
+        }
+      }
+    }
+
+    void cargar()
+
+    return () => controller.abort()
+  }, [dia, revision])
+
+  function actualizar() {
+    setDia(hoyGym())
+    setRevision((actual) => actual + 1)
+  }
+
+  const alertasVisibles =
+    vencimientos && listaVisible
+      ? vencimientos[listaVisible]
+      : []
+
+  const totalAlertasVisibles =
+    vencimientos && listaVisible
+      ? listaVisible === 'porVencer'
+        ? vencimientos.totalPorVencer
+        : vencimientos.totalVencidos
+      : 0
 
   return (
     <section>
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-          Resumen general
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+            Resumen general
+          </p>
 
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-          Dashboard
-        </h1>
+          <h1 className="mt-2 text-3xl font-extrabold sm:text-4xl">
+            Dashboard
+          </h1>
 
-        <p className="mt-3 text-sm text-zinc-500">
-          Así va JP GYM actualmente.
-        </p>
+          <p className="mt-3 text-sm text-zinc-500">
+            Actividad del {fecha(dia)} · Hora de República Dominicana.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          disabled={cargando}
+          onClick={actualizar}
+          className="rounded-xl border border-zinc-200 px-4 py-3 text-sm disabled:opacity-40"
+        >
+          {cargando ? 'Actualizando…' : 'Actualizar'}
+        </button>
       </div>
 
-      {/* Miembros */}
-      <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {errorGeneral && <ErrorMensaje texto={errorGeneral} />}
+
+      <div className="mt-7 grid gap-4 sm:grid-cols-3">
         <MetricCard
           label="Total de miembros"
-          value="248"
-          detail="+12 este mes"
-        />
-
-        <MetricCard
-          label="Miembros activos"
-          value="221"
-          detail="89% del total"
-        />
-
-        <MetricCard
-          label="Por vencer"
-          value="14"
-          detail="Próximos 7 días"
-          warning
-          actionLabel="Ver miembros"
-          onAction={() =>
-            setVisibleList(
-              visibleList === 'expiring'
-                ? null
-                : 'expiring',
-            )
+          value={
+            totalMiembros === null ? '—' : String(totalMiembros)
           }
+          detail="Todos los miembros registrados"
         />
 
         <MetricCard
-          label="Vencidos"
-          value="27"
-          detail="Requieren renovación"
-          danger
-          actionLabel="Ver miembros"
-          onAction={() =>
-            setVisibleList(
-              visibleList === 'expired'
-                ? null
-                : 'expired',
-            )
+          label="Entradas registradas hoy"
+          value={
+            asistencia ? String(asistencia.totalEntradas) : '—'
           }
+          detail="Incluye varias entradas de un mismo miembro"
+        />
+
+        <MetricCard
+          label="Miembros que asistieron hoy"
+          value={
+            asistencia ? String(asistencia.miembrosDistintos) : '—'
+          }
+          detail="Cada miembro se cuenta una sola vez"
         />
       </div>
 
-      {/* Lista rápida */}
-      {visibleList && (
-        <div className="mt-5 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 p-5">
-            <div>
-              <h2 className="font-semibold text-zinc-900">
-                {visibleList === 'expiring'
-                  ? 'Miembros por vencer'
-                  : 'Miembros vencidos'}
-              </h2>
-
-              <p className="mt-1 text-xs text-zinc-500">
-                Vista rápida para dar seguimiento a renovaciones.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setVisibleList(null)}
-              className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
-            >
-              Cerrar
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="border-b border-zinc-100 bg-zinc-50 text-xs uppercase text-zinc-500">
-                <tr>
-                  <th className="px-5 py-4">
-                    Miembro
-                  </th>
-
-                  <th className="px-5 py-4">
-                    Código
-                  </th>
-
-                  <th className="px-5 py-4">
-                    Teléfono
-                  </th>
-
-                  <th className="px-5 py-4">
-                    Vencimiento
-                  </th>
-
-                  <th className="px-5 py-4">
-                    Estado
-                  </th>
-
-                  <th className="px-5 py-4 text-right">
-                    Acción
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-zinc-100">
-                {membersToShow.map((member) => (
-                  <tr
-                    key={member.code}
-                    className="hover:bg-zinc-50"
-                  >
-                    <td className="px-5 py-4 font-semibold">
-                      {member.name}
-                    </td>
-
-                    <td className="px-5 py-4 text-zinc-600">
-                      {member.code}
-                    </td>
-
-                    <td className="px-5 py-4 text-zinc-600">
-                      {member.phone}
-                    </td>
-
-                    <td className="px-5 py-4">
-                      {member.expires}
-                    </td>
-
-                    <td className="px-5 py-4">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          member.status === 'Por vencer'
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'bg-red-50 text-red-700'
-                        }`}
-                      >
-                        {member.status}
-                      </span>
-                    </td>
-
-                    <td className="px-5 py-4 text-right">
-                      <button
-                        type="button"
-                        className="text-xs font-semibold text-[#E11D2E] hover:underline"
-                      >
-                        Ver ficha
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="border-t border-zinc-100 bg-zinc-50 px-5 py-3 text-xs text-zinc-500">
-            Se muestran datos ficticios para la interfaz.
-          </div>
-        </div>
+      {errorAsistencia && (
+        <ErrorMensaje texto={errorAsistencia} />
       )}
 
-      {/* Finanzas */}
-      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <FinanceCard
-          label="Ingresos del mes"
-          amount={186500}
-          variation="+13.0%"
-        />
-
-        <FinanceCard
-          label="Gastos del mes"
-          amount={62800}
-          variation="-6.5%"
-        />
-
-        <div className="rounded-2xl border border-zinc-800 bg-[#1A1A1A] p-5 text-white shadow-sm">
-          <p className="text-xs text-zinc-400">
-            Resultado del mes
-          </p>
-
-          <p className="mt-3 text-3xl font-bold">
-            RD$123,700.00
-          </p>
-
-          <p className="mt-3 text-xs font-semibold text-emerald-400">
-            +26.5% vs. período anterior
-          </p>
-        </div>
-      </div>
-
-      {/* Segunda fila */}
-      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-        <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="border-b border-zinc-100 p-5">
-            <h2 className="font-semibold">
-              Alertas
+      {administrador === true && (
+        <>
+          <div className="mt-8">
+            <h2 className="text-lg font-bold">
+              Estado de las membresías
             </h2>
 
-            <p className="mt-1 text-xs text-zinc-500">
-              Situaciones que requieren atención.
-            </p>
+            {vencimientos && (
+              <p className="mt-2 text-xs text-zinc-500">
+                Consulta del {fecha(vencimientos.fecha)}.
+              </p>
+            )}
+
+            {errorVencimientos && (
+              <ErrorMensaje texto={errorVencimientos} />
+            )}
+
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <MetricCard
+                label="Miembros con membresía vigente"
+                value={
+                  vencimientos
+                    ? String(
+                        vencimientos.miembrosConMembresiaVigente,
+                      )
+                    : '—'
+                }
+                detail="Miembros habilitados con cobertura válida hoy"
+              />
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                <p className="text-xs text-zinc-500">
+                  Por vencer
+                </p>
+
+                <p className="mt-3 text-3xl font-bold">
+                  {vencimientos
+                    ? vencimientos.totalPorVencer
+                    : '—'}
+                </p>
+
+                <p className="mt-3 text-xs text-amber-700">
+                  Último día válido entre hoy y los próximos
+                  siete días
+                </p>
+
+                <button
+                  type="button"
+                  disabled={!vencimientos}
+                  aria-expanded={listaVisible === 'porVencer'}
+                  onClick={() =>
+                    setListaVisible((actual) =>
+                      actual === 'porVencer'
+                        ? null
+                        : 'porVencer',
+                    )
+                  }
+                  className="mt-4 text-xs font-semibold text-red-600 disabled:opacity-40"
+                >
+                  {listaVisible === 'porVencer'
+                    ? 'Ocultar'
+                    : 'Ver miembros'}
+                </button>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                <p className="text-xs text-zinc-500">
+                  Vencidos
+                </p>
+
+                <p className="mt-3 text-3xl font-bold">
+                  {vencimientos
+                    ? vencimientos.totalVencidos
+                    : '—'}
+                </p>
+
+                <p className="mt-3 text-xs text-red-700">
+                  Tuvieron cobertura, pero hoy no tienen
+                  membresía vigente
+                </p>
+
+                <button
+                  type="button"
+                  disabled={!vencimientos}
+                  aria-expanded={listaVisible === 'vencidos'}
+                  onClick={() =>
+                    setListaVisible((actual) =>
+                      actual === 'vencidos'
+                        ? null
+                        : 'vencidos',
+                    )
+                  }
+                  className="mt-4 text-xs font-semibold text-red-600 disabled:opacity-40"
+                >
+                  {listaVisible === 'vencidos'
+                    ? 'Ocultar'
+                    : 'Ver miembros'}
+                </button>
+              </div>
+            </div>
+
+            {listaVisible && vencimientos && (
+              <div className="mt-5 overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+                <div className="flex items-center justify-between gap-3 border-b border-zinc-100 p-5">
+                  <div>
+                    <h3 className="font-semibold">
+                      {listaVisible === 'porVencer'
+                        ? 'Miembros por vencer'
+                        : 'Miembros vencidos'}
+                    </h3>
+
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Se muestran {alertasVisibles.length} de{' '}
+                      {totalAlertasVisibles} miembros.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setListaVisible(null)}
+                    className="rounded-lg border border-zinc-200 px-3 py-2 text-xs"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[650px] text-left text-sm">
+                    <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
+                      <tr>
+                        <th className="p-4">Miembro</th>
+                        <th className="p-4">Código</th>
+                        <th className="p-4">Teléfono</th>
+                        <th className="p-4">
+                          Último día válido
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-zinc-100">
+                      {alertasVisibles.map((miembro) => (
+                        <tr key={miembro.miembroId}>
+                          <td className="p-4 font-semibold">
+                            {miembro.nombreCompleto}
+                          </td>
+
+                          <td className="p-4">
+                            {miembro.codigoBarras}
+                          </td>
+
+                          <td className="p-4">
+                            {miembro.telefono}
+                          </td>
+
+                          <td className="p-4">
+                            {ultimoDia(
+                              miembro.fechaFinExclusiva,
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+
+                      {alertasVisibles.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            className="p-5 text-zinc-500"
+                          >
+                            No hay miembros en esta categoría.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="border-t border-zinc-100 px-5 py-3 text-xs text-zinc-500">
+                  Vista rápida de hasta 20 miembros.
+                  Las renovaciones consecutivas ya pagadas
+                  prolongan la cobertura.
+                </p>
+              </div>
+            )}
           </div>
 
-          <div className="divide-y divide-zinc-100">
-            <Alert
-              title="14 mensualidades por vencer"
-              description="Vencen durante los próximos 7 días."
-              type="warning"
-            />
-
-            <Alert
-              title="27 miembros vencidos"
-              description="Pendientes de renovación."
-              type="danger"
-            />
-
-            <Alert
-              title="18 personas en el gimnasio"
-              description="Ocupación estimada actual."
-              type="normal"
-            />
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="border-b border-zinc-100 p-5">
-            <h2 className="font-semibold">
-              Miembros recientes
+          <div className="mt-8">
+            <h2 className="text-lg font-bold">
+              Finanzas del día
             </h2>
 
-            <p className="mt-1 text-xs text-zinc-500">
-              Estado actual de algunos miembros.
-            </p>
+            {errorFinanzas && (
+              <ErrorMensaje texto={errorFinanzas} />
+            )}
+
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <MetricCard
+                label="Ingresos del día"
+                value={
+                  finanzas
+                    ? dinero(finanzas.ingresos.totalIngresos)
+                    : '—'
+                }
+                detail="Membresías y entradas diarias"
+              />
+
+              <MetricCard
+                label="Gastos del día"
+                value={
+                  finanzas
+                    ? dinero(finanzas.gastos.totalGastos)
+                    : '—'
+                }
+                detail="Todos los métodos de pago"
+              />
+
+              <MetricCard
+                label="Resultado neto del día"
+                value={
+                  finanzas
+                    ? dinero(finanzas.resultadoNeto)
+                    : '—'
+                }
+                detail="Ingresos menos gastos"
+              />
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <MetricCard
+                label="Cobros en efectivo"
+                value={
+                  finanzas
+                    ? dinero(finanzas.ingresos.totalEfectivo)
+                    : '—'
+                }
+                detail="Ingresos cobrados en efectivo"
+              />
+
+              <MetricCard
+                label="Cobros con tarjeta"
+                value={
+                  finanzas
+                    ? dinero(finanzas.ingresos.totalTarjeta)
+                    : '—'
+                }
+                detail="Ingresos cobrados con tarjeta"
+              />
+
+              <MetricCard
+                label="Cobros por transferencia"
+                value={
+                  finanzas
+                    ? dinero(
+                        finanzas.ingresos.totalTransferencia,
+                      )
+                    : '—'
+                }
+                detail="Ingresos cobrados por transferencia"
+              />
+            </div>
           </div>
+        </>
+      )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-left text-sm">
-              <thead className="border-b border-zinc-100 bg-zinc-50 text-xs uppercase text-zinc-500">
-                <tr>
-                  <th className="px-5 py-4">
-                    Miembro
-                  </th>
+      <div className="mt-8 overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        <div className="border-b border-zinc-100 p-5">
+          <h2 className="font-semibold">
+            Miembros recientes
+          </h2>
 
-                  <th className="px-5 py-4">
-                    Estado
-                  </th>
+          <p className="mt-1 text-xs text-zinc-500">
+            Los cinco registros más recientes.
+          </p>
+        </div>
 
-                  <th className="px-5 py-4">
-                    Vencimiento
-                  </th>
+        {errorMiembros && (
+          <div className="px-5 pb-4">
+            <ErrorMensaje texto={errorMiembros} />
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[650px] text-left text-sm">
+            <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
+              <tr>
+                <th className="p-4">Miembro</th>
+                <th className="p-4">Código</th>
+                <th className="p-4">Registro</th>
+                <th className="p-4">Habilitado</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-zinc-100">
+              {recientes.map((miembro) => (
+                <tr key={miembro.id}>
+                  <td className="p-4 font-semibold">
+                    {miembro.nombreCompleto}
+                  </td>
+
+                  <td className="p-4">
+                    {miembro.codigoBarras}
+                  </td>
+
+                  <td className="p-4 text-zinc-500">
+                    {mostrarRegistro(miembro.fechaRegistro)}
+                  </td>
+
+                  <td className="p-4">
+                    <span
+                      className={
+                        miembro.activo
+                          ? 'text-emerald-700'
+                          : 'text-zinc-500'
+                      }
+                    >
+                      {miembro.activo ? 'Sí' : 'No'}
+                    </span>
+                  </td>
                 </tr>
-              </thead>
+              ))}
 
-              <tbody className="divide-y divide-zinc-100">
-                {recentMembers.map((member) => (
-                  <tr key={member.name}>
-                    <td className="px-5 py-4 font-semibold">
-                      {member.name}
-                    </td>
+              {cargando && recientes.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="p-5 text-zinc-500"
+                  >
+                    Cargando…
+                  </td>
+                </tr>
+              )}
 
-                    <td className="px-5 py-4">
-                      <StatusBadge
-                        status={member.status}
-                      />
-                    </td>
-
-                    <td className="px-5 py-4 text-zinc-500">
-                      {member.expires}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              {!cargando && totalMiembros === 0 && (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="p-5 text-zinc-500"
+                  >
+                    No hay miembros registrados.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
 
-      <p className="mt-6 text-xs text-zinc-400">
-        Datos ficticios hasta conectar los indicadores reales del backend.
-      </p>
+        <p className="border-t border-zinc-100 px-5 py-4 text-xs text-zinc-500">
+          “Habilitado” indica el estado del miembro.
+          La vigencia de su membresía se consulta en su ficha
+          o en Check-in.
+        </p>
+      </div>
     </section>
   )
 }
@@ -389,18 +648,10 @@ function MetricCard({
   label,
   value,
   detail,
-  warning = false,
-  danger = false,
-  actionLabel,
-  onAction,
 }: {
   label: string
   value: string
   detail: string
-  warning?: boolean
-  danger?: boolean
-  actionLabel?: string
-  onAction?: () => void
 }) {
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
@@ -412,111 +663,20 @@ function MetricCard({
         {value}
       </p>
 
-      <p
-        className={`mt-3 text-xs font-medium ${
-          danger
-            ? 'text-red-600'
-            : warning
-              ? 'text-amber-600'
-              : 'text-emerald-700'
-        }`}
-      >
+      <p className="mt-3 text-xs text-zinc-500">
         {detail}
       </p>
-
-      {actionLabel && onAction && (
-        <button
-          type="button"
-          onClick={onAction}
-          className="mt-4 text-xs font-semibold text-[#E11D2E] hover:underline"
-        >
-          {actionLabel} →
-        </button>
-      )}
     </div>
   )
 }
 
-function FinanceCard({
-  label,
-  amount,
-  variation,
-}: {
-  label: string
-  amount: number
-  variation: string
-}) {
+function ErrorMensaje({ texto }: { texto: string }) {
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-      <p className="text-xs text-zinc-500">
-        {label}
-      </p>
-
-      <p className="mt-3 text-2xl font-bold">
-        RD$
-        {amount.toLocaleString('es-DO', {
-          minimumFractionDigits: 2,
-        })}
-      </p>
-
-      <p className="mt-3 text-xs font-semibold text-emerald-700">
-        {variation} vs. anterior
-      </p>
-    </div>
-  )
-}
-
-function Alert({
-  title,
-  description,
-  type,
-}: {
-  title: string
-  description: string
-  type: 'warning' | 'danger' | 'normal'
-}) {
-  return (
-    <div className="flex gap-3 p-5">
-      <span
-        className={`mt-1 size-2 shrink-0 rounded-full ${
-          type === 'danger'
-            ? 'bg-red-500'
-            : type === 'warning'
-              ? 'bg-amber-500'
-              : 'bg-emerald-500'
-        }`}
-      />
-
-      <div>
-        <p className="text-sm font-semibold">
-          {title}
-        </p>
-
-        <p className="mt-1 text-xs text-zinc-500">
-          {description}
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function StatusBadge({
-  status,
-}: {
-  status: string
-}) {
-  const classes =
-    status === 'Activo'
-      ? 'bg-emerald-50 text-emerald-700'
-      : status === 'Por vencer'
-        ? 'bg-amber-50 text-amber-700'
-        : 'bg-red-50 text-red-700'
-
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-medium ${classes}`}
+    <p
+      role="alert"
+      className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700"
     >
-      {status}
-    </span>
+      {texto}
+    </p>
   )
 }

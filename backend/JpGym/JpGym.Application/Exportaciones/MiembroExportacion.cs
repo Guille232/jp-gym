@@ -16,7 +16,7 @@ public class MiembroExportacion
 
     public string? NumeroDocumento { get; set; }
 
-    public int EdadAlRegistrarse { get; set; }
+    public int? EdadAlRegistrarse { get; set; }
 
     public string? Direccion { get; set; }
 

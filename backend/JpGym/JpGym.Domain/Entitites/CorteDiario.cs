@@ -38,4 +38,12 @@ public class CorteDiario
         = DateTimeOffset.UtcNow;
 
     public string? Observacion { get; set; }
+
+    public bool Reabierto { get; set; }
+
+    public string? ReabiertoPorUsuarioId { get; set; }
+
+    public DateTimeOffset? FechaReapertura { get; set; }
+
+    public string? MotivoReapertura { get; set; }
 }

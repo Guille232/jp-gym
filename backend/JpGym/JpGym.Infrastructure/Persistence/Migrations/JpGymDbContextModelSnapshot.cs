@@ -220,6 +220,9 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly>("FechaOperacion")
                         .HasColumnType("date");
 
+                    b.Property<DateTimeOffset?>("FechaReapertura")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<decimal>("FondoInicial")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -244,9 +247,20 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("MotivoReapertura")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("Observacion")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("Reabierto")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ReabiertoPorUsuarioId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<decimal>("SalidasDeCaja")
                         .HasPrecision(18, 2)
@@ -257,7 +271,10 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                     b.HasIndex("CerradoPorUsuarioId");
 
                     b.HasIndex("FechaOperacion")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[Reabierto] = 0");
+
+                    b.HasIndex("ReabiertoPorUsuarioId");
 
                     b.ToTable("CortesDiarios", null, t =>
                         {
@@ -266,6 +283,8 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_CortesDiarios_EfectivoEsperado", "[EfectivoEsperado] = [FondoInicial] + [CobrosEfectivo] - [SalidasDeCaja]");
 
                             t.HasCheckConstraint("CK_CortesDiarios_Montos", "[FondoInicial] >= 0 AND [IngresosMembresias] >= 0 AND [IngresosEntradasDiarias] >= 0 AND [CobrosEfectivo] >= 0 AND [CobrosTarjeta] >= 0 AND [CobrosTransferencia] >= 0 AND [GastosEfectivo] >= 0 AND [GastosTarjeta] >= 0 AND [GastosTransferencia] >= 0 AND [SalidasDeCaja] >= 0 AND [EfectivoContado] >= 0");
+
+                            t.HasCheckConstraint("CK_CortesDiarios_Reapertura", "([Reabierto] = 0 AND [ReabiertoPorUsuarioId] IS NULL AND [FechaReapertura] IS NULL AND [MotivoReapertura] IS NULL) OR ([Reabierto] = 1 AND [ReabiertoPorUsuarioId] IS NOT NULL AND [FechaReapertura] IS NOT NULL AND [FechaReapertura] >= [FechaCierre] AND [MotivoReapertura] IS NOT NULL AND LEN(LTRIM(RTRIM([MotivoReapertura]))) > 0)");
 
                             t.HasCheckConstraint("CK_CortesDiarios_Salidas", "[SalidasDeCaja] <= [GastosEfectivo]");
                         });
@@ -486,7 +505,7 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("nvarchar(250)");
 
-                    b.Property<int>("EdadAlRegistrarse")
+                    b.Property<int?>("EdadAlRegistrarse")
                         .HasColumnType("int");
 
                     b.Property<string>("Email")
@@ -876,6 +895,11 @@ namespace JpGym.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CerradoPorUsuarioId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("JpGym.Infrastructure.Identity.UsuarioAplicacion", null)
+                        .WithMany()
+                        .HasForeignKey("ReabiertoPorUsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("JpGym.Domain.Entities.EntradaDiaria", b =>

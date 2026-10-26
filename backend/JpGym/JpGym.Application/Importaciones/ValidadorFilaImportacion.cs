@@ -10,44 +10,10 @@ public class ValidadorFilaImportacion
     {
         ArgumentNullException.ThrowIfNull(fila);
 
-        var errores = new List<string>(fila.ErroresLectura);
-
-        var datosMiembro = new CrearMiembroRequest
-        {
-            NombreCompleto = fila.NombreCompleto?.Trim()
-                ?? string.Empty,
-            Telefono = fila.Telefono?.Trim()
-                ?? string.Empty,
-            NumeroDocumento = string.IsNullOrWhiteSpace(
-                fila.NumeroDocumento)
-                    ? null
-                    : fila.NumeroDocumento.Trim(),
-            Edad = fila.Edad,
-            Direccion = string.IsNullOrWhiteSpace(fila.Direccion)
-                ? null
-                : fila.Direccion.Trim()
-        };
+        var errores = new List<string>(
+            fila.ErroresLectura ?? new List<string>());
 
         var resultados = new List<ValidationResult>();
-
-        Validator.TryValidateObject(
-            datosMiembro,
-            new ValidationContext(datosMiembro),
-            resultados,
-            validateAllProperties: true);
-
-        errores.AddRange(resultados.Select(resultado =>
-            resultado.ErrorMessage ?? "Datos del miembro inválidos."));
-
-        // Garantiza esta regla aunque otros campos tengan errores.
-        if (fila.Edad >= 18
-            && string.IsNullOrWhiteSpace(fila.NumeroDocumento))
-        {
-            errores.Add(
-                "La cédula es obligatoria para mayores de edad.");
-        }
-
-        resultados.Clear();
 
         Validator.TryValidateObject(
             fila,
@@ -56,23 +22,81 @@ public class ValidadorFilaImportacion
             validateAllProperties: true);
 
         errores.AddRange(resultados.Select(resultado =>
-            resultado.ErrorMessage ?? "Datos de importación inválidos."));
+            resultado.ErrorMessage
+            ?? "Datos de importación inválidos."));
 
-        if (string.IsNullOrWhiteSpace(fila.IdSistemaAnterior))
+        var nombre = fila.NombreCompleto?.Trim()
+            ?? string.Empty;
+
+        if (nombre.Length < 2 || nombre.Length > 150)
         {
-            errores.Add("El ID antiguo es obligatorio.");
+            errores.Add(
+                "El nombre debe tener entre 2 y 150 caracteres.");
         }
-        else if (fila.IdSistemaAnterior.Trim().Length > 50)
+
+        var telefono = fila.Telefono?.Trim()
+            ?? string.Empty;
+
+        if (telefono.Length > 30)
+        {
+            errores.Add(
+                "El teléfono no puede superar los 30 caracteres.");
+        }
+
+        var documento = fila.NumeroDocumento?.Trim();
+
+        if (documento is { Length: > 30 })
+        {
+            errores.Add(
+                "El documento no puede superar los 30 caracteres.");
+        }
+
+        if (fila.Edad.HasValue)
+        {
+            if (fila.Edad.Value < 0 || fila.Edad.Value > 120)
+            {
+                errores.Add(
+                    "La edad debe estar entre 0 y 120 años.");
+            }
+
+            if (fila.Edad.Value >= 18
+                && string.IsNullOrWhiteSpace(documento))
+            {
+                errores.Add(
+                    "La cédula es obligatoria cuando se informa "
+                    + "que el miembro es mayor de edad.");
+            }
+        }
+
+        if (fila.Direccion?.Trim().Length > 250)
+        {
+            errores.Add(
+                "La dirección no puede superar los 250 caracteres.");
+        }
+
+        var idAntiguo = fila.IdSistemaAnterior?.Trim()
+            ?? string.Empty;
+
+        if (idAntiguo.Length == 0)
+        {
+            errores.Add(
+                "El ID antiguo es obligatorio como referencia "
+                + "para evitar importaciones duplicadas.");
+        }
+        else if (idAntiguo.Length > 50)
         {
             errores.Add(
                 "El ID antiguo no puede superar los 50 caracteres.");
         }
 
-        if (string.IsNullOrWhiteSpace(fila.NombrePlan))
+        var plan = fila.NombrePlan?.Trim()
+            ?? string.Empty;
+
+        if (plan.Length == 0)
         {
             errores.Add("El nombre del plan es obligatorio.");
         }
-        else if (fila.NombrePlan.Trim().Length > 100)
+        else if (plan.Length > 100)
         {
             errores.Add(
                 "El nombre del plan no puede superar los 100 caracteres.");
@@ -110,14 +134,18 @@ public class ValidadorFilaImportacion
         var estado = fila.EstadoOriginal?.Trim()
             ?? string.Empty;
 
+        // Esta comprobación confirma el período pagado.
+        // La vigencia actual se determinará por las fechas.
         if (!estado.Equals(
-            "Activo",
-            StringComparison.OrdinalIgnoreCase))
+                "Activo",
+                StringComparison.OrdinalIgnoreCase)
+            && !estado.Equals(
+                "Pagado",
+                StringComparison.OrdinalIgnoreCase))
         {
             errores.Add(
                 "El estado no confirma un período pagado. "
-                + "La fila requiere revisión antes de importar "
-                + "su membresía.");
+                + "La membresía requiere revisión antes de importarse.");
         }
 
         return errores

@@ -1,520 +1,810 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 
-const membershipIncome = 32500
-const dailyEntryIncome = 4200
+import {
+  cerrarCorte,
+  consultarCortePorFecha,
+  consultarFinanzas,
+  listarCortes,
+  reabrirCorte,
+} from '../../services/dailyClosings'
 
-const cashIncome = 18500
-const cardIncome = 10200
-const transferIncome = 8000
+import type {
+  CorteDiario,
+  ListaCortes,
+  ResumenFinanciero,
+} from '../../services/dailyClosings'
 
-const expenses = 3500
+import {
+  consultarPermisos,
+  dinero,
+  fecha,
+  fechaPago,
+  mensaje,
+} from '../../services/members'
+
+function hoyGym(): string {
+  const partes = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santo_Domingo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+
+  const obtener = (tipo: string) =>
+    partes.find((parte) => parte.type === tipo)?.value ?? ''
+
+  return `${obtener('year')}-${obtener('month')}-${obtener('day')}`
+}
+
+const campo =
+  'mt-2 w-full rounded-xl border border-zinc-200 ' +
+  'bg-zinc-50 px-4 py-3 text-sm'
+
+const boton =
+  'rounded-xl border border-zinc-200 px-4 py-2 ' +
+  'text-sm disabled:opacity-40'
+
+function importeValido(valor: string): boolean {
+  return /^\d+(\.\d{1,2})?$/.test(valor) &&
+    Number.isFinite(Number(valor))
+}
 
 export default function DailyClosePage() {
-  const [countedCash, setCountedCash] =
-    useState('')
+  const [administrador, setAdministrador] =
+    useState<boolean | null>(null)
 
-  const [closed, setClosed] =
-    useState(false)
+  const [errorPermisos, setErrorPermisos] = useState('')
+  const [dia, setDia] = useState(hoyGym)
+  const [revision, setRevision] = useState(0)
 
-  const [showConfirmation, setShowConfirmation] =
-    useState(false)
+  const [finanzas, setFinanzas] =
+    useState<ResumenFinanciero | null>(null)
 
-  const totalIncome =
-    membershipIncome +
-    dailyEntryIncome
+  const [corteHoy, setCorteHoy] = useState<CorteDiario | null>(null)
+  const [cargando, setCargando] = useState(true)
+  const [errorDia, setErrorDia] = useState('')
 
-  const netResult =
-    totalIncome - expenses
+  const [fondo, setFondo] = useState('0')
+  const [contado, setContado] = useState('')
+  const [observacion, setObservacion] = useState('')
 
-  const numericCountedCash =
-    Number(countedCash)
+  const [mostrarReapertura, setMostrarReapertura] = useState(false)
+  const [motivo, setMotivo] = useState('')
 
-  const validCountedCash =
-    countedCash !== '' &&
-    Number.isFinite(
-      numericCountedCash,
-    ) &&
-    numericCountedCash >= 0
+  const [ocupado, setOcupado] = useState(false)
+  const [errorOperacion, setErrorOperacion] = useState('')
+  const [exito, setExito] = useState('')
+  const [requiereActualizar, setRequiereActualizar] = useState(false)
 
-  const difference =
-    validCountedCash
-      ? numericCountedCash -
-        cashIncome
-      : 0
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+  const [pagina, setPagina] = useState(1)
 
-  function handleCloseDay() {
-    if (!validCountedCash) {
+  const [historial, setHistorial] = useState<ListaCortes | null>(null)
+  const [cargandoHistorial, setCargandoHistorial] = useState(false)
+  const [errorHistorial, setErrorHistorial] = useState('')
+
+  const [seleccionado, setSeleccionado] =
+    useState<CorteDiario | null>(null)
+
+  const bloqueo = useRef(false)
+
+  useEffect(() => {
+    let activo = true
+
+    consultarPermisos()
+      .then((sesion) => {
+        if (activo) setAdministrador(sesion.esAdministrador)
+      })
+      .catch((error: unknown) => {
+        if (activo) setErrorPermisos(mensaje(error))
+      })
+
+    return () => {
+      activo = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (administrador !== true) return
+
+    const controller = new AbortController()
+
+    setCargando(true)
+    setErrorDia('')
+    setFinanzas(null)
+    setCorteHoy(null)
+    setMostrarReapertura(false)
+
+    async function cargar() {
+      try {
+        const corte = await consultarCortePorFecha(
+          dia,
+          controller.signal,
+        )
+
+        if (controller.signal.aborted) return
+
+        if (corte) {
+          setCorteHoy(corte)
+        } else {
+          const resumen = await consultarFinanzas(
+            dia,
+            controller.signal,
+          )
+
+          if (controller.signal.aborted) return
+          setFinanzas(resumen)
+        }
+
+        setRequiereActualizar(false)
+      } catch (error: unknown) {
+        if (!controller.signal.aborted) {
+          setErrorDia(mensaje(error))
+        }
+      } finally {
+        if (!controller.signal.aborted) setCargando(false)
+      }
+    }
+
+    void cargar()
+
+    return () => controller.abort()
+  }, [administrador, dia, revision])
+
+  useEffect(() => {
+    if (administrador !== true) return
+
+    const controller = new AbortController()
+
+    setHistorial(null)
+    setErrorHistorial('')
+
+    if (desde && hasta && desde > hasta) {
+      setErrorHistorial(
+        'La fecha inicial no puede ser posterior a la fecha final.',
+      )
+      setCargandoHistorial(false)
+      return () => controller.abort()
+    }
+
+    setCargandoHistorial(true)
+
+    listarCortes(desde, hasta, pagina, controller.signal)
+      .then((resultado) => {
+        if (controller.signal.aborted) return
+
+        if (
+          resultado.totalPaginas > 0 &&
+          pagina > resultado.totalPaginas
+        ) {
+          setPagina(resultado.totalPaginas)
+          return
+        }
+
+        setHistorial(resultado)
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setErrorHistorial(mensaje(error))
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setCargandoHistorial(false)
+        }
+      })
+
+    return () => controller.abort()
+  }, [administrador, desde, hasta, pagina, revision])
+
+  const esperado = finanzas && importeValido(fondo)
+    ? Math.round(
+        (
+          Number(fondo) +
+          finanzas.ingresos.totalEfectivo -
+          finanzas.gastos.totalSalidasDeCaja
+        ) * 100,
+      ) / 100
+    : null
+
+  const diferencia = esperado !== null && importeValido(contado)
+    ? Math.round((Number(contado) - esperado) * 100) / 100
+    : null
+
+  function actualizar() {
+    if (bloqueo.current) return
+
+    setDia(hoyGym())
+    setSeleccionado(null)
+    setRevision((actual) => actual + 1)
+  }
+
+  async function guardar(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (
+      bloqueo.current ||
+      requiereActualizar ||
+      !finanzas ||
+      corteHoy
+    ) return
+
+    setErrorOperacion('')
+    setExito('')
+
+    if (hoyGym() !== dia) {
+      setErrorOperacion('Cambió el día. Actualiza antes de cerrar.')
+      setRequiereActualizar(true)
       return
     }
 
-    setShowConfirmation(false)
-    setClosed(true)
+    if (!importeValido(fondo) || !importeValido(contado)) {
+      setErrorOperacion(
+        'Introduce importes de cero o mayores con máximo dos decimales.',
+      )
+      return
+    }
+
+    if (diferencia !== 0 && !observacion.trim()) {
+      setErrorOperacion(
+        'Escribe una observación para explicar la diferencia.',
+      )
+      return
+    }
+
+    if (!window.confirm(
+      '¿Cerrar el día? Se bloquearán nuevos cobros y gastos '
+        + 'hasta que un administrador lo reabra.',
+    )) return
+
+    bloqueo.current = true
+    setOcupado(true)
+
+    try {
+      const corte = await cerrarCorte({
+        fondoInicial: Number(fondo),
+        efectivoContado: Number(contado),
+        observacion: observacion.trim() || null,
+      })
+
+      setSeleccionado(corte)
+      setContado('')
+      setObservacion('')
+      setExito('Corte diario guardado correctamente.')
+      setRevision((actual) => actual + 1)
+    } catch (error: unknown) {
+      setErrorOperacion(mensaje(error))
+      setRequiereActualizar(true)
+    } finally {
+      bloqueo.current = false
+      setOcupado(false)
+    }
   }
 
-  function handlePrint() {
-    window.print()
+  async function confirmarReapertura(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault()
+
+    if (
+      bloqueo.current ||
+      requiereActualizar ||
+      !corteHoy
+    ) return
+
+    setErrorOperacion('')
+    setExito('')
+
+    if (dia !== hoyGym()) {
+      setErrorOperacion('Cambió el día. Actualiza la consulta.')
+      setRequiereActualizar(true)
+      return
+    }
+
+    const motivoLimpio = motivo.trim()
+
+    if (motivoLimpio.length < 5 || motivoLimpio.length > 1000) {
+      setErrorOperacion(
+        'El motivo debe tener entre 5 y 1000 caracteres.',
+      )
+      return
+    }
+
+    if (!window.confirm(
+      '¿Reabrir el día? Se permitirán nuevos cobros y gastos. '
+        + 'El cierre anterior permanecerá en el historial.',
+    )) return
+
+    bloqueo.current = true
+    setOcupado(true)
+
+    try {
+      const anterior = corteHoy
+      const reabierto = await reabrirCorte(
+        anterior.id,
+        motivoLimpio,
+      )
+
+      // Conserva el fondo con el que comenzó el día.
+      setFondo(String(anterior.fondoInicial))
+      setContado('')
+      setObservacion('')
+      setMotivo('')
+      setMostrarReapertura(false)
+      setSeleccionado(reabierto)
+
+      setExito(
+        'Día reabierto. Puedes registrar nuevos movimientos '
+          + 'y realizar un nuevo cierre.',
+      )
+
+      setRevision((actual) => actual + 1)
+    } catch (error: unknown) {
+      setErrorOperacion(mensaje(error))
+      setRequiereActualizar(true)
+    } finally {
+      bloqueo.current = false
+      setOcupado(false)
+    }
+  }
+
+  if (errorPermisos) {
+    return <Alerta texto={errorPermisos} />
+  }
+
+  if (administrador === null) {
+    return <p>Consultando permisos…</p>
+  }
+
+  if (!administrador) {
+    return <p>El corte diario está disponible para el administrador.</p>
   }
 
   return (
     <section>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-            Caja
-          </p>
+      <h1 className="text-3xl font-extrabold">Corte diario</h1>
 
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-            Corte diario
-          </h1>
+      <p className="mt-3 text-sm text-zinc-500">
+        Cuenta el efectivo, guarda el cierre y consulta su historial.
+      </p>
 
-          <p className="mt-3 text-sm text-zinc-500">
-            Revisa los ingresos, gastos y efectivo antes de cerrar el día.
-          </p>
-        </div>
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <p className="font-semibold">Día: {fecha(dia)}</p>
 
-        <div>
-          {closed ? (
-            <span className="inline-flex rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">
-              Día cerrado
-            </span>
-          ) : (
-            <span className="inline-flex rounded-full bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700">
-              Caja abierta
-            </span>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={actualizar}
+          disabled={ocupado || cargando}
+          className={boton}
+        >
+          Actualizar
+        </button>
       </div>
 
-      {/* Resumen principal */}
-      <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          label="Membresías"
-          amount={membershipIncome}
-        />
+      {errorDia && <Alerta texto={errorDia} />}
+      {errorOperacion && <Alerta texto={errorOperacion} />}
 
-        <MetricCard
-          label="Entradas diarias"
-          amount={dailyEntryIncome}
-        />
+      {exito && (
+        <p
+          role="status"
+          className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800"
+        >
+          {exito}
+        </p>
+      )}
 
-        <MetricCard
-          label="Ingresos totales"
-          amount={totalIncome}
-          important
-        />
+      {requiereActualizar && (
+        <p className="mt-4 text-sm text-amber-700">
+          Pulsa Actualizar para comprobar el estado del día
+          antes de realizar otra operación.
+        </p>
+      )}
 
-        <MetricCard
-          label="Gastos"
-          amount={expenses}
-          danger
-        />
-      </div>
+      {cargando && <p className="mt-5">Consultando el día…</p>}
 
-      {/* Formas de pago */}
-      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-100 p-5">
-          <h2 className="font-semibold text-zinc-900">
-            Ingresos por método de pago
-          </h2>
-
-          <p className="mt-1 text-xs text-zinc-500">
-            Distribución de los cobros registrados durante el día.
+      {!cargando && corteHoy && (
+        <div className="mt-5">
+          <p className="mb-4 font-semibold text-emerald-700">
+            El día tiene un cierre vigente.
           </p>
-        </div>
 
-        <div className="grid grid-cols-1 gap-px bg-zinc-100 sm:grid-cols-3">
-          <PaymentMethodCard
-            label="Efectivo"
-            amount={cashIncome}
-          />
+          <Detalle corte={corteHoy} />
 
-          <PaymentMethodCard
-            label="Tarjeta"
-            amount={cardIncome}
-          />
-
-          <PaymentMethodCard
-            label="Transferencia"
-            amount={transferIncome}
-          />
-        </div>
-      </div>
-
-      {/* Caja */}
-      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_0.8fr]">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-6">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-[#E11D2E]">
-              Arqueo
-            </p>
-
-            <h2 className="mt-2 text-xl font-bold text-zinc-900">
-              Verificación de efectivo
-            </h2>
-
-            <p className="mt-2 text-sm text-zinc-500">
-              Cuenta el efectivo físico y compáralo con lo registrado por el sistema.
-            </p>
-          </div>
-
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-xl bg-zinc-50 p-4">
-              <p className="text-xs text-zinc-500">
-                Efectivo registrado
-              </p>
-
-              <p className="mt-2 text-2xl font-bold text-zinc-900">
-                {formatCurrency(
-                  cashIncome,
-                )}
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-xs font-semibold text-zinc-700">
-                Efectivo contado *
-              </label>
-
-              <div className="relative">
-                <span className="absolute left-4 top-3 text-sm font-semibold text-zinc-500">
-                  RD$
-                </span>
-
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={countedCash}
-                  disabled={closed}
-                  onChange={(event) =>
-                    setCountedCash(
-                      event.target.value,
-                    )
-                  }
-                  placeholder="0.00"
-                  className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-12 pr-4 text-sm font-semibold outline-none focus:border-[#E11D2E] disabled:cursor-not-allowed disabled:bg-zinc-100"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div
-            className={`mt-5 rounded-2xl border p-5 ${
-              !validCountedCash
-                ? 'border-zinc-200 bg-zinc-50'
-                : difference === 0
-                  ? 'border-emerald-200 bg-emerald-50'
-                  : 'border-amber-200 bg-amber-50'
-            }`}
+          <button
+            type="button"
+            disabled={ocupado || requiereActualizar}
+            onClick={() => {
+              setMostrarReapertura((actual) => !actual)
+              setMotivo('')
+              setErrorOperacion('')
+            }}
+            className={`${boton} mt-4`}
           >
-            <p className="text-xs font-semibold text-zinc-500">
-              Diferencia de caja
-            </p>
+            {mostrarReapertura ? 'Cancelar reapertura' : 'Reabrir corte'}
+          </button>
 
-            <p
-              className={`mt-2 text-3xl font-bold ${
-                !validCountedCash
-                  ? 'text-zinc-400'
-                  : difference === 0
-                    ? 'text-emerald-700'
-                    : 'text-amber-700'
-              }`}
+          {mostrarReapertura && (
+            <form
+              onSubmit={confirmarReapertura}
+              className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5"
             >
-              {validCountedCash
-                ? formatSignedCurrency(
-                    difference,
-                  )
-                : '—'}
-            </p>
+              <fieldset disabled={ocupado || requiereActualizar}>
+                <label className="block text-sm font-semibold">
+                  Motivo de reapertura
+                  <textarea
+                    required
+                    minLength={5}
+                    maxLength={1000}
+                    rows={3}
+                    value={motivo}
+                    onChange={(event) => setMotivo(event.target.value)}
+                    className={campo}
+                  />
+                </label>
 
-            {validCountedCash && (
-              <p className="mt-2 text-xs text-zinc-600">
-                {difference === 0
-                  ? 'El efectivo contado coincide con el sistema.'
-                  : difference > 0
-                    ? 'Existe un sobrante de efectivo.'
-                    : 'Existe un faltante de efectivo.'}
-              </p>
-            )}
-          </div>
-        </div>
+                <p className="mt-3 text-xs text-zinc-600">
+                  El cierre anterior se conserva. Al cerrar de nuevo,
+                  se recalculan todos los movimientos del día.
+                </p>
 
-        {/* Resultado */}
-        <div className="rounded-2xl bg-[#0D0D0D] p-5 text-white shadow-sm sm:p-6">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-            Resultado
-          </p>
-
-          <h2 className="mt-2 text-xl font-bold">
-            Resumen del día
-          </h2>
-
-          <div className="mt-6 space-y-4">
-            <ResultRow
-              label="Ingresos"
-              value={totalIncome}
-            />
-
-            <ResultRow
-              label="Gastos"
-              value={expenses}
-              negative
-            />
-
-            <div className="border-t border-white/10 pt-4">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-semibold text-zinc-300">
-                  Resultado neto
-                </span>
-
-                <strong className="text-2xl">
-                  {formatCurrency(
-                    netResult,
-                  )}
-                </strong>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-xl bg-white/5 p-4">
-            <p className="text-xs text-zinc-400">
-              Estado
-            </p>
-
-            <p className="mt-1 text-sm font-semibold">
-              {closed
-                ? 'Corte cerrado'
-                : 'Pendiente de cierre'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Confirmación */}
-      {showConfirmation && !closed && (
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-          <h3 className="font-semibold text-amber-900">
-            ¿Confirmar cierre del día?
-          </h3>
-
-          <p className="mt-2 text-sm leading-6 text-amber-800">
-            El corte quedará registrado con los ingresos, gastos y diferencia de caja mostrados.
-          </p>
-
-          <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={() =>
-                setShowConfirmation(
-                  false,
-                )
-              }
-              className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-600"
-            >
-              Cancelar
-            </button>
-
-            <button
-              type="button"
-              onClick={
-                handleCloseDay
-              }
-              className="h-10 rounded-xl bg-[#E11D2E] px-4 text-sm font-semibold text-white"
-            >
-              Sí, cerrar día
-            </button>
-          </div>
+                <button
+                  type="submit"
+                  className="mt-4 rounded-xl bg-amber-700 px-4 py-3 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  {ocupado ? 'Reabriendo…' : 'Confirmar reapertura'}
+                </button>
+              </fieldset>
+            </form>
+          )}
         </div>
       )}
 
-      {/* Acciones */}
-      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="font-semibold text-zinc-900">
-              Acciones del corte
-            </h2>
+      {!cargando && !corteHoy && finanzas && (
+        <div className="mt-5 rounded-2xl border border-zinc-200 bg-white p-5">
+          <h2 className="mb-4 font-bold">Día abierto</h2>
 
-            <p className="mt-1 text-xs text-zinc-500">
-              Guarda el cierre antes de generar reportes definitivos.
-            </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Dato titulo="Membresías" valor={finanzas.ingresos.ingresosMembresias} />
+            <Dato titulo="Entradas diarias" valor={finanzas.ingresos.ingresosEntradasDiarias} />
+            <Dato titulo="Cobros en efectivo" valor={finanzas.ingresos.totalEfectivo} />
+            <Dato titulo="Cobros con tarjeta" valor={finanzas.ingresos.totalTarjeta} />
+            <Dato titulo="Cobros por transferencia" valor={finanzas.ingresos.totalTransferencia} />
+            <Dato titulo="Total de ingresos" valor={finanzas.ingresos.totalIngresos} />
+            <Dato titulo="Total de gastos" valor={finanzas.gastos.totalGastos} />
+            <Dato titulo="Salidas de caja" valor={finanzas.gastos.totalSalidasDeCaja} />
+            <Dato titulo="Resultado neto" valor={finanzas.resultadoNeto} />
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              disabled
-              title="Pendiente de backend"
-              className="h-10 cursor-not-allowed rounded-xl border border-zinc-200 bg-zinc-100 px-4 text-sm font-semibold text-zinc-400"
+          <form onSubmit={guardar} className="mt-6">
+            <fieldset
+              disabled={ocupado || requiereActualizar}
+              className="space-y-4"
             >
-              Descargar PDF
-            </button>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="text-sm font-semibold">
+                  Fondo inicial en RD$
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={fondo}
+                    onChange={(event) => setFondo(event.target.value)}
+                    className={campo}
+                  />
+                </label>
 
-            <button
-              type="button"
-              disabled
-              title="Pendiente de backend"
-              className="h-10 cursor-not-allowed rounded-xl border border-zinc-200 bg-zinc-100 px-4 text-sm font-semibold text-zinc-400"
-            >
-              Exportar Excel
-            </button>
+                <label className="text-sm font-semibold">
+                  Efectivo contado en RD$
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={contado}
+                    onChange={(event) => setContado(event.target.value)}
+                    className={campo}
+                  />
+                </label>
+              </div>
 
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="h-10 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
-            >
-              Imprimir
-            </button>
+              <p className="text-xs text-zinc-500">
+                El fondo inicial es el efectivo con el que comenzó
+                el día. Al volver a cerrar, no uses el efectivo
+                del cierre anterior como un fondo nuevo.
+              </p>
 
-            <button
-              type="button"
-              disabled={
-                closed ||
-                !validCountedCash
-              }
-              onClick={() =>
-                setShowConfirmation(
-                  true,
-                )
-              }
-              className="h-10 rounded-xl bg-[#E11D2E] px-4 text-sm font-semibold text-white transition hover:bg-[#C91828] disabled:cursor-not-allowed disabled:bg-zinc-300"
-            >
-              {closed
-                ? 'Día cerrado'
-                : 'Cerrar día'}
-            </button>
-          </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Dato titulo="Efectivo esperado estimado" valor={esperado} />
+                <Dato titulo="Diferencia estimada" valor={diferencia} />
+              </div>
+
+              <label className="block text-sm font-semibold">
+                Observación
+                <textarea
+                  rows={3}
+                  maxLength={1000}
+                  required={diferencia !== null && diferencia !== 0}
+                  value={observacion}
+                  onChange={(event) =>
+                    setObservacion(event.target.value)
+                  }
+                  className={campo}
+                />
+              </label>
+
+              <p className="text-xs text-zinc-500">
+                Esperado = fondo inicial + cobros en efectivo
+                − salidas de caja. El backend recalcula los
+                importes al guardar.
+              </p>
+
+              <button
+                type="submit"
+                className="rounded-xl bg-[#E11D2E] px-5 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {ocupado ? 'Guardando…' : 'Cerrar día'}
+              </button>
+            </fieldset>
+          </form>
         </div>
-      </div>
+      )}
 
-      <p className="mt-5 text-xs text-zinc-400">
-        Datos ficticios para la interfaz. Los valores reales serán obtenidos del backend cuando se implemente el cierre de caja.
-      </p>
+      <div className="mt-10">
+        <h2 className="text-xl font-bold">Historial de cortes</h2>
+
+        <div className="mt-4 flex flex-wrap gap-4">
+          <label className="text-sm">
+            Desde
+            <input
+              type="date"
+              value={desde}
+              disabled={ocupado}
+              onChange={(event) => {
+                setDesde(event.target.value)
+                setPagina(1)
+              }}
+              className={campo}
+            />
+          </label>
+
+          <label className="text-sm">
+            Hasta
+            <input
+              type="date"
+              value={hasta}
+              disabled={ocupado}
+              onChange={(event) => {
+                setHasta(event.target.value)
+                setPagina(1)
+              }}
+              className={campo}
+            />
+          </label>
+        </div>
+
+        {errorHistorial && <Alerta texto={errorHistorial} />}
+
+        <div className="mt-4 overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+          <table className="w-full min-w-[850px] text-left text-sm">
+            <thead className="bg-zinc-50">
+              <tr>
+                <th className="p-4">Fecha</th>
+                <th className="p-4">Estado</th>
+                <th className="p-4">Responsable</th>
+                <th className="p-4">Esperado</th>
+                <th className="p-4">Contado</th>
+                <th className="p-4">Diferencia</th>
+                <th className="p-4">Detalle</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-zinc-100">
+              {cargandoHistorial && (
+                <tr>
+                  <td colSpan={7} className="p-4">Cargando…</td>
+                </tr>
+              )}
+
+              {!cargandoHistorial && historial?.cortes.map((corte) => (
+                <tr key={corte.id}>
+                  <td className="p-4">{fecha(corte.fechaOperacion)}</td>
+                  <td className="p-4">
+                    <span className={
+                      corte.reabierto
+                        ? 'text-amber-700'
+                        : 'text-emerald-700'
+                    }>
+                      {corte.reabierto ? 'Reabierto' : 'Cerrado'}
+                    </span>
+                  </td>
+                  <td className="p-4">{corte.nombreUsuarioCierre}</td>
+                  <td className="p-4">{dinero(corte.efectivoEsperado)}</td>
+                  <td className="p-4">{dinero(corte.efectivoContado)}</td>
+                  <td className="p-4">{dinero(corte.diferencia)}</td>
+                  <td className="p-4">
+                    <button
+                      type="button"
+                      onClick={() => setSeleccionado(corte)}
+                      className="font-semibold text-red-600"
+                    >
+                      Ver
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {!cargandoHistorial && historial?.totalRegistros === 0 && (
+                <tr>
+                  <td colSpan={7} className="p-4">
+                    No hay cortes guardados para este filtro.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="mt-3 text-xs text-zinc-500">
+          Los cortes reabiertos son registros históricos:
+          no deben sumarse con el cierre vigente.
+        </p>
+
+        {historial && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span>
+              {historial.totalRegistros} registros · Página{' '}
+              {historial.pagina} de {Math.max(1, historial.totalPaginas)}
+            </span>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={ocupado || cargandoHistorial || pagina <= 1}
+                onClick={() => setPagina((actual) => actual - 1)}
+                className={boton}
+              >
+                Anterior
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  ocupado ||
+                  cargandoHistorial ||
+                  pagina >= historial.totalPaginas
+                }
+                onClick={() => setPagina((actual) => actual + 1)}
+                className={boton}
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        )}
+
+        {seleccionado && (
+          <div className="mt-6">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-bold">
+                Corte del {fecha(seleccionado.fechaOperacion)}
+              </h3>
+
+              <button
+                type="button"
+                onClick={() => setSeleccionado(null)}
+                className={boton}
+              >
+                Ocultar detalle
+              </button>
+            </div>
+
+            <Detalle corte={seleccionado} />
+          </div>
+        )}
+      </div>
     </section>
   )
 }
 
-function MetricCard({
-  label,
-  amount,
-  important = false,
-  danger = false,
-}: {
-  label: string
-  amount: number
-  important?: boolean
-  danger?: boolean
-}) {
+function Alerta({ texto }: { texto: string }) {
   return (
-    <div
-      className={`rounded-2xl border p-5 shadow-sm ${
-        important
-          ? 'border-zinc-800 bg-[#1A1A1A] text-white'
-          : 'border-zinc-200 bg-white'
-      }`}
+    <p
+      role="alert"
+      className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700"
     >
-      <p
-        className={`text-xs ${
-          important
-            ? 'text-zinc-400'
-            : 'text-zinc-500'
-        }`}
-      >
-        {label}
-      </p>
-
-      <p
-        className={`mt-2 text-2xl font-bold ${
-          danger
-            ? 'text-red-600'
-            : ''
-        }`}
-      >
-        {formatCurrency(
-          amount,
-        )}
-      </p>
-    </div>
+      {texto}
+    </p>
   )
 }
 
-function PaymentMethodCard({
-  label,
-  amount,
+function Dato({
+  titulo,
+  valor,
 }: {
-  label: string
-  amount: number
+  titulo: string
+  valor: number | null
 }) {
   return (
-    <div className="bg-white p-5">
-      <p className="text-xs text-zinc-500">
-        {label}
-      </p>
-
-      <p className="mt-2 text-xl font-bold text-zinc-900">
-        {formatCurrency(
-          amount,
-        )}
+    <div className="rounded-xl bg-zinc-50 p-4">
+      <p className="text-xs text-zinc-500">{titulo}</p>
+      <p className="mt-2 font-bold">
+        {valor === null ? '—' : dinero(valor)}
       </p>
     </div>
   )
 }
 
-function ResultRow({
-  label,
-  value,
-  negative = false,
-}: {
-  label: string
-  value: number
-  negative?: boolean
-}) {
+function Detalle({ corte }: { corte: CorteDiario }) {
+  const importes: [string, number][] = [
+    ['Fondo inicial', corte.fondoInicial],
+    ['Ingresos por membresías', corte.ingresosMembresias],
+    ['Ingresos por entradas diarias', corte.ingresosEntradasDiarias],
+    ['Cobros en efectivo', corte.cobrosEfectivo],
+    ['Cobros con tarjeta', corte.cobrosTarjeta],
+    ['Cobros por transferencia', corte.cobrosTransferencia],
+    ['Gastos en efectivo', corte.gastosEfectivo],
+    ['Gastos con tarjeta', corte.gastosTarjeta],
+    ['Gastos por transferencia', corte.gastosTransferencia],
+    ['Salidas de caja', corte.salidasDeCaja],
+    ['Total de ingresos', corte.totalIngresos],
+    ['Total de gastos', corte.totalGastos],
+    ['Resultado neto', corte.resultadoNeto],
+    ['Efectivo esperado', corte.efectivoEsperado],
+    ['Efectivo contado', corte.efectivoContado],
+    ['Diferencia', corte.diferencia],
+  ]
+
   return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-sm text-zinc-400">
-        {label}
-      </span>
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5">
+      <p className="font-semibold">
+        Estado: {corte.reabierto ? 'Reabierto' : 'Cerrado'}
+      </p>
 
-      <span
-        className={`text-sm font-semibold ${
-          negative
-            ? 'text-red-400'
-            : 'text-white'
-        }`}
-      >
-        {negative ? '- ' : ''}
-        {formatCurrency(
-          value,
-        )}
-      </span>
+      <p className="mt-2 text-sm">
+        Cerrado por: <strong>{corte.nombreUsuarioCierre}</strong>
+      </p>
+
+      <p className="mt-2 text-sm text-zinc-500">
+        {fechaPago(corte.fechaCierre)}
+      </p>
+
+      {corte.reabierto && (
+        <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm">
+          <p>
+            Reabierto por:{' '}
+            {corte.nombreUsuarioReapertura ||
+              corte.reabiertoPorUsuarioId ||
+              'No disponible'}
+          </p>
+
+          {corte.fechaReapertura && (
+            <p className="mt-2">
+              {fechaPago(corte.fechaReapertura)}
+            </p>
+          )}
+
+          <p className="mt-2 whitespace-pre-wrap">
+            Motivo: {corte.motivoReapertura}
+          </p>
+
+          <p className="mt-2 text-xs">
+            Los importes siguientes corresponden al cierre anterior.
+          </p>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {importes.map(([titulo, valor]) => (
+          <Dato key={titulo} titulo={titulo} valor={valor} />
+        ))}
+      </div>
+
+      <p className="mt-4 whitespace-pre-wrap text-sm">
+        Observación: {corte.observacion || 'Sin observación.'}
+      </p>
     </div>
   )
-}
-
-function formatCurrency(
-  value: number,
-) {
-  return `RD$${value.toLocaleString(
-    'es-DO',
-    {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    },
-  )}`
-}
-
-function formatSignedCurrency(
-  value: number,
-) {
-  if (value === 0) {
-    return 'RD$0.00'
-  }
-
-  const prefix =
-    value > 0 ? '+' : '-'
-
-  return `${prefix}${formatCurrency(
-    Math.abs(value),
-  )}`
 }

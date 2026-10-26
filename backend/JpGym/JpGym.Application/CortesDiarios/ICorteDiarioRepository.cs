@@ -26,4 +26,12 @@ public interface ICorteDiarioRepository
         int pagina,
         int tamanoPagina,
         CancellationToken cancellationToken = default);
+
+    Task<bool> ReabrirAsync(
+    Guid id,
+    DateOnly fechaOperacion,
+    string usuarioId,
+    DateTimeOffset fechaReapertura,
+    string motivo,
+    CancellationToken cancellationToken = default);
 }

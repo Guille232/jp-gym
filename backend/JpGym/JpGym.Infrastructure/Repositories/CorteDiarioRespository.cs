@@ -21,7 +21,9 @@ public class CorteDiarioRepository : ICorteDiarioRepository
         return _context.CortesDiarios
             .AsNoTracking()
             .AnyAsync(
-                corte => corte.FechaOperacion == fecha,
+                corte =>
+                    corte.FechaOperacion == fecha
+                    && !corte.Reabierto,
                 cancellationToken);
     }
 
@@ -54,7 +56,9 @@ public class CorteDiarioRepository : ICorteDiarioRepository
         return Proyectar(
                 _context.CortesDiarios
                     .AsNoTracking()
-                    .Where(corte => corte.FechaOperacion == fecha))
+                    .Where(corte =>
+                        corte.FechaOperacion == fecha
+                        && !corte.Reabierto))
             .SingleOrDefaultAsync(cancellationToken);
     }
 
@@ -91,6 +95,7 @@ public class CorteDiarioRepository : ICorteDiarioRepository
             throw new ArgumentOutOfRangeException(nameof(pagina));
         }
 
+        // El historial incluye cierres vigentes y reabiertos.
         var consulta = _context.CortesDiarios.AsNoTracking();
 
         if (desde.HasValue)
@@ -110,6 +115,7 @@ public class CorteDiarioRepository : ICorteDiarioRepository
 
         var consultaPaginada = consulta
             .OrderByDescending(corte => corte.FechaOperacion)
+            .ThenByDescending(corte => corte.FechaCierre)
             .ThenBy(corte => corte.Id)
             .Skip((int)desplazamiento)
             .Take(tamanoPagina);
@@ -126,6 +132,38 @@ public class CorteDiarioRepository : ICorteDiarioRepository
         };
     }
 
+    public async Task<bool> ReabrirAsync(
+        Guid id,
+        DateOnly fechaOperacion,
+        string usuarioId,
+        DateTimeOffset fechaReapertura,
+        string motivo,
+        CancellationToken cancellationToken = default)
+    {
+        var afectados = await _context.CortesDiarios
+            .Where(corte =>
+                corte.Id == id
+                && corte.FechaOperacion == fechaOperacion
+                && !corte.Reabierto)
+            .ExecuteUpdateAsync(
+                cambios => cambios
+                    .SetProperty(
+                        corte => corte.Reabierto,
+                        true)
+                    .SetProperty(
+                        corte => corte.ReabiertoPorUsuarioId,
+                        usuarioId)
+                    .SetProperty(
+                        corte => corte.FechaReapertura,
+                        (DateTimeOffset?)fechaReapertura)
+                    .SetProperty(
+                        corte => corte.MotivoReapertura,
+                        motivo),
+                cancellationToken);
+
+        return afectados == 1;
+    }
+
     private IQueryable<CorteDiarioResponse> Proyectar(
         IQueryable<CorteDiario> consulta)
     {
@@ -133,19 +171,26 @@ public class CorteDiarioRepository : ICorteDiarioRepository
         {
             Id = corte.Id,
             FechaOperacion = corte.FechaOperacion,
+
             FondoInicial = corte.FondoInicial,
+
             IngresosMembresias = corte.IngresosMembresias,
-            IngresosEntradasDiarias = corte.IngresosEntradasDiarias,
+            IngresosEntradasDiarias =
+                corte.IngresosEntradasDiarias,
+
             CobrosEfectivo = corte.CobrosEfectivo,
             CobrosTarjeta = corte.CobrosTarjeta,
             CobrosTransferencia = corte.CobrosTransferencia,
+
             GastosEfectivo = corte.GastosEfectivo,
             GastosTarjeta = corte.GastosTarjeta,
             GastosTransferencia = corte.GastosTransferencia,
+
             SalidasDeCaja = corte.SalidasDeCaja,
             EfectivoEsperado = corte.EfectivoEsperado,
             EfectivoContado = corte.EfectivoContado,
             Diferencia = corte.Diferencia,
+
             CerradoPorUsuarioId = corte.CerradoPorUsuarioId,
 
             NombreUsuarioCierre = _context.Users
@@ -155,7 +200,19 @@ public class CorteDiarioRepository : ICorteDiarioRepository
                 .FirstOrDefault() ?? string.Empty,
 
             FechaCierre = corte.FechaCierre,
-            Observacion = corte.Observacion
+            Observacion = corte.Observacion,
+
+            Reabierto = corte.Reabierto,
+            ReabiertoPorUsuarioId = corte.ReabiertoPorUsuarioId,
+
+            NombreUsuarioReapertura = _context.Users
+                .Where(usuario =>
+                    usuario.Id == corte.ReabiertoPorUsuarioId)
+                .Select(usuario => usuario.NombreCompleto)
+                .FirstOrDefault(),
+
+            FechaReapertura = corte.FechaReapertura,
+            MotivoReapertura = corte.MotivoReapertura
         });
     }
 }

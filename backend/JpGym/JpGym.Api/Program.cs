@@ -17,8 +17,14 @@ using JpGym.Application.Clases;
 using JpGym.Application.Importaciones;
 using JpGym.Application.Exportaciones;
 using JpGym.Application.CortesDiarios;
+using JpGym.Application.Pagos;
+using JpGym.Application.Dashboard;
+using JpGym.Application.Analiticas;
 
 var builder = WebApplication.CreateBuilder(args);
+
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Evaluation;
+
 
 // Servicios de la API
 builder.Services.AddControllersWithViews(options =>
@@ -136,8 +142,8 @@ builder.Services.AddScoped<EliminarMiembro>();
 
 var rutaLogo = Path.Combine(
     builder.Environment.ContentRootPath,
-    "Assets",
-    "logo-jp-gym.png");
+    "wwwroot",
+    "jp-gym-logo.png");
 
 builder.Services.AddSingleton(new DatosGymComprobante
 {
@@ -188,6 +194,15 @@ builder.Services.AddScoped<ConsultarCortesDiarios>();
 builder.Services.AddScoped<ConsultarCorteDiarioPorId>();
 builder.Services.AddScoped<ConsultarCorteDiarioPorFecha>();
 
+builder.Services.AddScoped<ConsultarPagos>();
+
+builder.Services.AddScoped<ConsultarVencimientos>();
+
+builder.Services.AddScoped<ConsultarAnaliticas>();
+
+builder.Services.AddScoped<ReabrirCorteDiario>();
+
+builder.Services.AddScoped<ConsultarMembresiasGenerales>();
 
 var origenesFrontend = builder.Configuration
     .GetSection("Cors:Origenes")
@@ -212,22 +227,44 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+var inicializarAdministrador = builder.Configuration.GetValue<bool>(
+    "AdministradorInicial:Ejecutar",
+    app.Environment.IsDevelopment());
+
+if (inicializarAdministrador)
 {
     var configuracion = builder.Configuration
         .GetSection("AdministradorInicial");
 
+    var nombre = configuracion["NombreCompleto"];
+    var email = configuracion["Email"];
+    var password = configuracion["Password"];
+
+    if (string.IsNullOrWhiteSpace(nombre)
+        || string.IsNullOrWhiteSpace(email)
+        || string.IsNullOrWhiteSpace(password))
+    {
+        throw new InvalidOperationException(
+            "Faltan los datos del administrador inicial.");
+    }
+
     await InicializadorIdentity.InicializarAsync(
         app.Services,
-        configuracion["NombreCompleto"] ?? string.Empty,
-        configuracion["Email"] ?? string.Empty,
-        configuracion["Password"] ?? string.Empty);
+        nombre,
+        email,
+        password);
+}
 
+if (app.Environment.IsDevelopment())
+{
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
 app.UseHttpsRedirection();
+
+// Sirve index.html y los archivos del frontend desde wwwroot.
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 app.UseRouting();
 
@@ -237,5 +274,38 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Permite abrir directamente las rutas de React.
+app.MapFallback("{*path:nonfile}", async (HttpContext context) =>
+{
+    // Las rutas de API inexistentes deben responder 404.
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.StatusCode =
+            StatusCodes.Status404NotFound;
+
+        return;
+    }
+
+    var rutaIndex = Path.Combine(
+        app.Environment.ContentRootPath,
+        "wwwroot",
+        "index.html");
+
+    if (!File.Exists(rutaIndex))
+    {
+        context.Response.StatusCode =
+            StatusCodes.Status404NotFound;
+
+        return;
+    }
+
+    context.Response.ContentType = "text/html; charset=utf-8";
+    context.Response.Headers.CacheControl = "no-cache";
+
+    await context.Response.SendFileAsync(
+        rutaIndex,
+        context.RequestAborted);
+}).AllowAnonymous();
 
 app.Run();

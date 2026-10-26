@@ -99,6 +99,9 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
             entity.Property(miembro => miembro.Notas)
                 .HasMaxLength(1000)
                 .IsRequired(false);
+
+            entity.Property(miembro => miembro.EdadAlRegistrarse)
+               .IsRequired(false);
         });
 
         modelBuilder.Entity<PlanMembresia>(entity =>
@@ -473,7 +476,21 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
                 tabla.HasCheckConstraint(
                     "CK_CortesDiarios_Diferencia",
                     "[Diferencia] = [EfectivoContado] - [EfectivoEsperado]");
-            });
+
+                tabla.HasCheckConstraint(
+                 "CK_CortesDiarios_Reapertura",
+                   "([Reabierto] = 0 "
+                   + "AND [ReabiertoPorUsuarioId] IS NULL "
+                   + "AND [FechaReapertura] IS NULL "
+                    + "AND [MotivoReapertura] IS NULL) "
+                   + "OR "
+                    + "([Reabierto] = 1 "
+                  + "AND [ReabiertoPorUsuarioId] IS NOT NULL "
+                 + "AND [FechaReapertura] IS NOT NULL "
+                 + "AND [FechaReapertura] >= [FechaCierre] "
+                 + "AND [MotivoReapertura] IS NOT NULL "
+                 + "AND LEN(LTRIM(RTRIM([MotivoReapertura]))) > 0)");
+                  });
 
             entity.HasKey(corte => corte.Id);
 
@@ -481,7 +498,8 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
                 .HasColumnType("date");
 
             entity.HasIndex(corte => corte.FechaOperacion)
-                .IsUnique();
+                .IsUnique()
+                .HasFilter("[Reabierto] = 0");
 
             entity.Property(corte => corte.FondoInicial)
                 .HasPrecision(18, 2);
@@ -533,6 +551,17 @@ public class JpGymDbContext : IdentityDbContext<UsuarioAplicacion>
             entity.HasOne<UsuarioAplicacion>()
                 .WithMany()
                 .HasForeignKey(corte => corte.CerradoPorUsuarioId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.Property(corte => corte.ReabiertoPorUsuarioId)
+           .HasMaxLength(450);
+
+            entity.Property(corte => corte.MotivoReapertura)
+                .HasMaxLength(1000);
+
+            entity.HasOne<UsuarioAplicacion>()
+                .WithMany()
+                .HasForeignKey(corte => corte.ReabiertoPorUsuarioId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

@@ -1,123 +1,151 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from "react";
+import {
+  listarAsistencias,
+  consultarResumenAsistencias,
+} from "../../services/checkin";
+import type {
+  ListaAsistencias,
+  ResumenAsistencias,
+} from "../../services/checkin";
+import {
+  fecha as mostrarFecha,
+  fechaPago,
+  mensaje,
+} from "../../services/members";
 
-type Attendance = {
-  id: number
-  name: string
-  code: string
-  date: string
-  time: string
-  registeredBy: string
+function hoyGym() {
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Santo_Domingo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const obtener = (tipo: string) =>
+    partes.find((parte) => parte.type === tipo)?.value ?? "";
+
+  return `${obtener("year")}-${obtener("month")}-${obtener("day")}`;
 }
 
-const attendanceData: Attendance[] = [
-  {
-    id: 1,
-    name: 'Jhonatan Rodríguez',
-    code: 'JP-A012',
-    date: '2026-10-05',
-    time: '08:13 AM',
-    registeredBy: 'Recepción',
-  },
-  {
-    id: 2,
-    name: 'Yudelkis Hernández',
-    code: 'JP-A013',
-    date: '2026-10-05',
-    time: '09:05 AM',
-    registeredBy: 'Recepción',
-  },
-  {
-    id: 3,
-    name: 'Miguel Batista',
-    code: 'JP-A014',
-    date: '2026-10-05',
-    time: '10:42 AM',
-    registeredBy: 'Administrador',
-  },
-  {
-    id: 4,
-    name: 'Paola Alcántara',
-    code: 'JP-A015',
-    date: '2026-10-04',
-    time: '06:18 PM',
-    registeredBy: 'Recepción',
-  },
-  {
-    id: 5,
-    name: 'Jhonatan Rodríguez',
-    code: 'JP-A012',
-    date: '2026-10-04',
-    time: '07:14 AM',
-    registeredBy: 'Recepción',
-  },
-]
-
 export default function AttendancePage() {
-  const [date, setDate] =
-    useState('2026-10-05')
+  const [fecha, setFecha] = useState(hoyGym);
+  const [pagina, setPagina] = useState(1);
+  const [datos, setDatos] = useState<ListaAsistencias | null>(null);
+  const [resumen, setResumen] =
+    useState<ResumenAsistencias | null>(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
 
-  const [search, setSearch] =
-    useState('')
+  useEffect(() => {
+    const controller = new AbortController();
 
-  const filtered = useMemo(() => {
-    const term =
-      search.trim().toLowerCase()
+    setDatos(null);
+    setResumen(null);
+    setError("");
 
-    return attendanceData.filter(
-      (item) => {
-        const matchesDate =
-          !date ||
-          item.date === date
+    if (!fecha) {
+      setCargando(false);
+      return () => controller.abort();
+    }
 
-        const matchesSearch =
-          !term ||
-          item.name
-            .toLowerCase()
-            .includes(term) ||
-          item.code
-            .toLowerCase()
-            .includes(term)
+    setCargando(true);
 
-        return (
-          matchesDate &&
-          matchesSearch
-        )
-      },
-    )
-  }, [date, search])
+    Promise.all([
+      listarAsistencias(fecha, pagina, controller.signal),
+      consultarResumenAsistencias(fecha, controller.signal),
+    ])
+      .then(([lista, totales]) => {
+        if (controller.signal.aborted) return;
 
-  const uniqueMembers =
-    new Set(
-      filtered.map(
-        (item) => item.code,
-      ),
-    ).size
+        if (lista.totalPaginas > 0 && pagina > lista.totalPaginas) {
+          setPagina(lista.totalPaginas);
+          return;
+        }
+
+        setDatos(lista);
+        setResumen(totales);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setError(mensaje(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setCargando(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [fecha, pagina, revision]);
 
   return (
     <section>
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-          Control de acceso
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-5">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+            Recepción
+          </p>
 
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-          Asistencia
-        </h1>
+          <h1 className="mt-2 text-3xl font-extrabold sm:text-4xl">
+            Asistencia
+          </h1>
 
-        <p className="mt-3 text-sm text-zinc-500">
-          Consulta las entradas registradas
-          de los miembros.
-        </p>
+          <p className="mt-3 text-sm text-zinc-500">
+            Consulta las entradas registradas de los miembros.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs font-semibold text-zinc-600">
+            Fecha
+            <input
+              type="date"
+              required
+              value={fecha}
+              onChange={(event) => {
+                setFecha(event.target.value);
+                setPagina(1);
+              }}
+              className="mt-2 block h-11 rounded-xl border border-zinc-200 bg-white px-4 text-sm"
+            />
+          </label>
+
+          <button
+            type="button"
+            disabled={cargando || !fecha}
+            onClick={() => setRevision((valor) => valor + 1)}
+            className="h-11 rounded-xl border bg-white px-5 text-sm font-semibold disabled:opacity-50"
+          >
+            Actualizar
+          </button>
+        </div>
       </div>
 
-      <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {error && (
+        <p
+          role="alert"
+          className="mt-5 rounded-xl bg-red-50 p-4 text-red-700"
+        >
+          {error}
+        </p>
+      )}
+
+      {!fecha && (
+        <p className="mt-5 text-sm text-amber-700">
+          Selecciona una fecha para consultar.
+        </p>
+      )}
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <p className="text-xs text-zinc-500">
-            Entradas encontradas
+            Entradas registradas
           </p>
 
           <p className="mt-2 text-3xl font-bold">
-            {filtered.length}
+            {resumen?.totalEntradas ?? "—"}
           </p>
         </div>
 
@@ -127,115 +155,66 @@ export default function AttendancePage() {
           </p>
 
           <p className="mt-2 text-3xl font-bold">
-            {uniqueMembers}
+            {resumen?.miembrosDistintos ?? "—"}
           </p>
         </div>
       </div>
 
       <div className="mt-6 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="grid grid-cols-1 gap-4 border-b border-zinc-100 p-5 sm:grid-cols-2">
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-zinc-600">
-              Fecha
-            </label>
-
-            <input
-              type="date"
-              value={date}
-              onChange={(event) =>
-                setDate(
-                  event.target.value,
-                )
-              }
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none focus:border-[#E11D2E]"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-zinc-600">
-              Buscar
-            </label>
-
-            <input
-              type="search"
-              value={search}
-              onChange={(event) =>
-                setSearch(
-                  event.target.value,
-                )
-              }
-              placeholder="Nombre o código..."
-              className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm outline-none focus:border-[#E11D2E]"
-            />
-          </div>
+        <div className="border-b p-5">
+          <h2 className="font-semibold">
+            {datos
+              ? `Asistencia del ${mostrarFecha(datos.fecha)}`
+              : "Listado de asistencia"}
+          </h2>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="border-b border-zinc-100 bg-zinc-50 text-xs uppercase text-zinc-500">
+          <table className="w-full min-w-[650px] text-left text-sm">
+            <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
-                <th className="px-5 py-4">
-                  Miembro
-                </th>
-
-                <th className="px-5 py-4">
-                  Código
-                </th>
-
-                <th className="px-5 py-4">
-                  Fecha
-                </th>
-
-                <th className="px-5 py-4">
-                  Hora
-                </th>
-
-                <th className="px-5 py-4">
-                  Registrado por
-                </th>
+                <th className="px-5 py-4">Código</th>
+                <th className="px-5 py-4">Miembro</th>
+                <th className="px-5 py-4">Fecha y hora de entrada</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-zinc-100">
-              {filtered.map(
-                (attendance) => (
-                  <tr
-                    key={attendance.id}
-                    className="hover:bg-zinc-50"
-                  >
-                    <td className="px-5 py-4 font-semibold">
-                      {attendance.name}
-                    </td>
+              {datos?.asistencias.map((asistencia) => (
+                <tr key={asistencia.id} className="hover:bg-zinc-50">
+                  <td className="px-5 py-4 font-semibold text-zinc-600">
+                    {asistencia.codigoBarras}
+                  </td>
 
-                    <td className="px-5 py-4">
-                      {attendance.code}
-                    </td>
+                  <td className="px-5 py-4 font-semibold">
+                    {asistencia.nombreCompleto}
+                  </td>
 
-                    <td className="px-5 py-4">
-                      {attendance.date}
-                    </td>
+                  <td className="px-5 py-4 text-zinc-600">
+                    {fechaPago(asistencia.fechaRegistro)}
+                  </td>
+                </tr>
+              ))}
 
-                    <td className="px-5 py-4">
-                      {attendance.time}
-                    </td>
-
-                    <td className="px-5 py-4 text-zinc-500">
-                      {
-                        attendance.registeredBy
-                      }
-                    </td>
-                  </tr>
-                ),
-              )}
-
-              {filtered.length === 0 && (
+              {cargando && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={3}
+                    role="status"
                     className="px-5 py-10 text-center text-zinc-500"
                   >
-                    No hay asistencias para
-                    estos filtros.
+                    Cargando asistencias…
+                  </td>
+                </tr>
+              )}
+
+              {!cargando && datos?.asistencias.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={3}
+                    className="px-5 py-10 text-center text-zinc-500"
+                  >
+                    No hay asistencias registradas para esta fecha.
                   </td>
                 </tr>
               )}
@@ -243,10 +222,40 @@ export default function AttendancePage() {
           </table>
         </div>
 
-        <div className="border-t border-zinc-100 px-5 py-4 text-xs text-zinc-500">
-          Datos ficticios para la interfaz.
-        </div>
+        {datos && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-zinc-50 p-4 text-sm">
+            <span>
+              {datos.totalRegistros} entradas · Página {pagina} de{" "}
+              {Math.max(1, datos.totalPaginas)}
+            </span>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={cargando || pagina <= 1}
+                onClick={() => setPagina((valor) => valor - 1)}
+                className="rounded-lg border bg-white px-3 py-2 disabled:opacity-40"
+              >
+                Anterior
+              </button>
+
+              <button
+                type="button"
+                disabled={cargando || pagina >= datos.totalPaginas}
+                onClick={() => setPagina((valor) => valor + 1)}
+                className="rounded-lg border bg-white px-3 py-2 disabled:opacity-40"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      <p className="mt-4 text-xs text-zinc-500">
+        Horas de República Dominicana. Un miembro puede registrar
+        varias entradas durante el mismo día.
+      </p>
     </section>
-  )
+  );
 }

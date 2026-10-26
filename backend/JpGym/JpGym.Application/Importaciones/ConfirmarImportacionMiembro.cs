@@ -126,10 +126,10 @@ public class ConfirmarImportacionMiembros
                                 .ToUpperInvariant(),
 
                             NombreCompleto = datos.NombreCompleto.Trim(),
-                            Telefono = datos.Telefono.Trim(),
+                            Telefono = datos.Telefono?.Trim() ?? string.Empty,
                             NumeroDocumento = Opcional(
                                 datos.NumeroDocumento),
-                            EdadAlRegistrarse = datos.Edad!.Value,
+                            EdadAlRegistrarse = datos.Edad,
                             Direccion = Opcional(datos.Direccion),
                             Email = Opcional(datos.Email),
                             Notas = Opcional(datos.Notas),
