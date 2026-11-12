@@ -7,7 +7,13 @@ import {
   mensaje,
 } from '../../services/members'
 
-export default function CrearPlanPanel() {
+import type { Plan } from '../../services/members'
+
+type Props = {
+  onCreado?: (plan: Plan) => void
+}
+
+export default function CrearPlanPanel({ onCreado }: Props) {
   const [administrador, setAdministrador] = useState(false)
   const [abierto, setAbierto] = useState(false)
 
@@ -51,6 +57,7 @@ export default function CrearPlanPanel() {
     const nombrePlan = nombre.trim()
     const importe = Number(precio)
     const cantidad = Number(duracion)
+    const unidadSeleccionada = Number(unidad)
 
     if (nombrePlan.length < 2 || nombrePlan.length > 100) {
       setError('El nombre debe tener entre 2 y 100 caracteres.')
@@ -62,7 +69,9 @@ export default function CrearPlanPanel() {
       importe <= 0 ||
       !/^\d+(\.\d{1,2})?$/.test(precio)
     ) {
-      setError('Introduce un precio positivo con máximo dos decimales.')
+      setError(
+        'Introduce un precio positivo con máximo dos decimales.',
+      )
       return
     }
 
@@ -75,6 +84,11 @@ export default function CrearPlanPanel() {
       return
     }
 
+    if (![1, 2].includes(unidadSeleccionada)) {
+      setError('Selecciona una unidad de duración válida.')
+      return
+    }
+
     bloqueo.current = true
     setGuardando(true)
 
@@ -83,12 +97,16 @@ export default function CrearPlanPanel() {
         nombre: nombrePlan,
         precio: importe,
         duracion: cantidad,
-        unidadDuracion: Number(unidad),
+        unidadDuracion: unidadSeleccionada,
       })
 
+      onCreado?.(plan)
+
       setExito(
-        `Plan "${plan.nombre}" creado. `
-          + 'Actualiza la página antes de contratar la membresía.',
+        `Plan "${plan.nombre}" creado. ` +
+          (onCreado
+            ? 'Ya puedes seleccionarlo al contratar o renovar la membresía.'
+            : 'Actualiza la página para seleccionarlo al contratar o renovar la membresía.'),
       )
 
       setNombre('')
@@ -118,6 +136,7 @@ export default function CrearPlanPanel() {
         onClick={() => {
           setAbierto((actual) => !actual)
           setError('')
+          setExito('')
         }}
         className="rounded-xl border border-zinc-200 px-4 py-3 text-sm font-semibold disabled:opacity-40"
       >
@@ -137,13 +156,15 @@ export default function CrearPlanPanel() {
         <div className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
           <p role="status">{exito}</p>
 
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="mt-3 font-semibold underline"
-          >
-            Actualizar página
-          </button>
+          {!onCreado && (
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-3 font-semibold underline"
+            >
+              Actualizar página
+            </button>
+          )}
         </div>
       )}
 
@@ -152,7 +173,15 @@ export default function CrearPlanPanel() {
           onSubmit={guardar}
           className="mt-4 rounded-2xl border border-zinc-200 bg-white p-5"
         >
-          <h2 className="font-semibold">Crear plan de membresía</h2>
+          <h2 className="font-semibold">
+            Crear plan de membresía
+          </h2>
+
+          <p className="mt-2 text-sm text-zinc-500">
+            Crear un plan no registra un pago ni modifica la
+            membresía actual. Después podrás seleccionarlo al
+            contratar o renovar.
+          </p>
 
           <fieldset disabled={guardando} className="mt-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -163,21 +192,25 @@ export default function CrearPlanPanel() {
                   minLength={2}
                   maxLength={100}
                   value={nombre}
-                  onChange={(event) => setNombre(event.target.value)}
-                  placeholder="Mensualidad"
+                  onChange={(event) =>
+                    setNombre(event.target.value)
+                  }
+                  placeholder="Ejemplo: Bimestral"
                   className={campo}
                 />
               </label>
 
               <label className="text-sm font-semibold">
-                Precio en RD$
+                Precio total del plan en RD$
                 <input
                   type="number"
                   required
                   min="0.01"
                   step="0.01"
                   value={precio}
-                  onChange={(event) => setPrecio(event.target.value)}
+                  onChange={(event) =>
+                    setPrecio(event.target.value)
+                  }
                   className={campo}
                 />
               </label>
@@ -202,7 +235,9 @@ export default function CrearPlanPanel() {
                 Unidad de duración
                 <select
                   value={unidad}
-                  onChange={(event) => setUnidad(event.target.value)}
+                  onChange={(event) =>
+                    setUnidad(event.target.value)
+                  }
                   className={campo}
                 >
                   <option value="1">Días</option>

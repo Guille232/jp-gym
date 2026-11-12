@@ -113,4 +113,20 @@ public class EntradaDiariaRepository : IEntradaDiariaRepository
 
         return resumen;
     }
+
+    public async Task<bool> EliminarAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var entrada = await _context.EntradasDiarias
+            .SingleOrDefaultAsync(e => e.Id == id, cancellationToken);
+
+        if (entrada is null)
+        {
+            return false;
+        }
+
+        _context.EntradasDiarias.Remove(entrada);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return true;
+    }
 }

@@ -5,6 +5,7 @@ import {
   consultarResumenEntradas,
   listarEntradas,
   registrarEntrada,
+  eliminarEntrada, // <-- NUEVA IMPORTACIÓN
 } from '../../services/dailyEntries'
 
 import type {
@@ -67,11 +68,14 @@ export default function DailyEntriesPage() {
 
   const [guardando, setGuardando] = useState(false)
   const [cargando, setCargando] = useState(false)
+  const [eliminando, setEliminando] = useState(false) // <-- NUEVO ESTADO
 
   const [errorRegistro, setErrorRegistro] = useState('')
   const [errorHistorial, setErrorHistorial] = useState('')
   const [errorPermisos, setErrorPermisos] = useState('')
   const [exito, setExito] = useState('')
+  const [errorEliminar, setErrorEliminar] = useState('') // <-- NUEVO ESTADO
+  const [exitoEliminar, setExitoEliminar] = useState('') // <-- NUEVO ESTADO
 
   const bloqueo = useRef(false)
 
@@ -137,6 +141,27 @@ export default function DailyEntriesPage() {
     return () => controller.abort()
   }, [administrador, fecha, pagina, revision])
 
+  // --- NUEVA FUNCIÓN PARA ELIMINAR ---
+  async function handleEliminar(id: string) {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar esta entrada? El monto se restará del total del día.')) {
+      return
+    }
+
+    setErrorEliminar('')
+    setExitoEliminar('')
+    setEliminando(true)
+
+    try {
+      await eliminarEntrada(id)
+      setExitoEliminar('Entrada eliminada correctamente.')
+      setRevision((actual) => actual + 1) // Recarga la tabla y los totales
+    } catch (error: unknown) {
+      setErrorEliminar(mensaje(error) || 'Error al eliminar la entrada.')
+    } finally {
+      setEliminando(false)
+    }
+  }
+
   async function guardar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -175,15 +200,14 @@ export default function DailyEntriesPage() {
       })
 
       setExito(
-        `Cobro registrado: ${dinero(entrada.monto)}. `
-          + fechaPago(entrada.fechaRegistro),
+        `Cobro registrado: ${dinero(entrada.monto)}. ` +
+          fechaPago(entrada.fechaRegistro),
       )
 
       setMonto('')
       setMetodo('')
       setObservacion('')
 
-      // El registro usa la fecha asignada por el backend.
       setFecha(entrada.fechaOperacion)
       setPagina(1)
       setRevision((actual) => actual + 1)
@@ -344,6 +368,19 @@ export default function DailyEntriesPage() {
                 </p>
               )}
 
+              {/* --- MENSAJES DE ELIMINACIÓN --- */}
+              {errorEliminar && (
+                <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+                  {errorEliminar}
+                </p>
+              )}
+              {exitoEliminar && (
+                <p role="status" className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
+                  {exitoEliminar}
+                </p>
+              )}
+              {/* ------------------------------- */}
+
               {!fecha && (
                 <p className="mt-4 text-sm text-zinc-500">
                   Selecciona una fecha para consultar.
@@ -383,20 +420,21 @@ export default function DailyEntriesPage() {
                   </div>
 
                   <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
-                    <table className="w-full min-w-[550px] text-left text-sm">
+                    <table className="w-full min-w-[600px] text-left text-sm">
                       <thead className="bg-zinc-50">
                         <tr>
                           <th className="p-4">Fecha y hora</th>
                           <th className="p-4">Método</th>
                           <th className="p-4">Observación</th>
                           <th className="p-4 text-right">Monto</th>
+                          <th className="p-4 text-center">Acciones</th> {/* <-- NUEVA COLUMNA */}
                         </tr>
                       </thead>
 
                       <tbody className="divide-y divide-zinc-100">
                         {cargando && (
                           <tr>
-                            <td colSpan={4} className="p-5">
+                            <td colSpan={5} className="p-5"> {/* colSpan actualizado a 5 */}
                               Cargando…
                             </td>
                           </tr>
@@ -417,12 +455,25 @@ export default function DailyEntriesPage() {
                               <td className="p-4 text-right font-semibold">
                                 {dinero(entrada.monto)}
                               </td>
+                              
+                              {/* --- NUEVO BOTÓN ELIMINAR --- */}
+                              <td className="p-4 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEliminar(entrada.id)}
+                                  disabled={eliminando}
+                                  className="text-xs font-semibold text-red-600 hover:text-red-800 disabled:opacity-50"
+                                >
+                                  Eliminar
+                                </button>
+                              </td>
+                              {/* ---------------------------- */}
                             </tr>
                           ))}
 
                         {!cargando && lista?.totalRegistros === 0 && (
                           <tr>
-                            <td colSpan={4} className="p-5 text-zinc-500">
+                            <td colSpan={5} className="p-5 text-zinc-500"> {/* colSpan actualizado a 5 */}
                               No hay cobros registrados para esta fecha.
                             </td>
                           </tr>

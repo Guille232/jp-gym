@@ -432,7 +432,14 @@ export default function MemberDetail({
         )}
 
         {esAdministrador && !ocupado && (
-          <CrearPlanPanel />
+          <CrearPlanPanel
+          onCreado={(nuevoPlan) => {
+          setPlanes((actuales) => [
+          ...actuales.filter((plan) => plan.id !== nuevoPlan.id),
+          nuevoPlan,
+    ])
+  }}
+/>
         )}
       </div>
 

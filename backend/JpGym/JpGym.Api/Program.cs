@@ -71,8 +71,8 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.Cookie.SameSite = SameSiteMode.Lax;
     options.Cookie.Path = "/";
 
-    options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
-    options.SlidingExpiration = false;
+    options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    options.SlidingExpiration = true;
 
     options.Events.OnRedirectToLogin = context =>
     {
@@ -203,6 +203,8 @@ builder.Services.AddScoped<ConsultarAnaliticas>();
 builder.Services.AddScoped<ReabrirCorteDiario>();
 
 builder.Services.AddScoped<ConsultarMembresiasGenerales>();
+
+builder.Services.AddScoped<EliminarEntradaDiaria>();
 
 var origenesFrontend = builder.Configuration
     .GetSection("Cors:Origenes")

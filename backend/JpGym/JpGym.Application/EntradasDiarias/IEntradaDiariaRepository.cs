@@ -17,4 +17,6 @@ public interface IEntradaDiariaRepository
     Task<ResumenEntradasDiariasResponse> ObtenerResumenAsync(
     DateOnly fecha,
     CancellationToken cancellationToken = default);
+
+    Task<bool> EliminarAsync(Guid id, CancellationToken cancellationToken = default);
 }

@@ -139,3 +139,37 @@ export async function registrarEntrada(datos: {
 
   return response.json()
 }
+
+export async function eliminarEntrada(id: string): Promise<void> {
+  if (!id?.trim()) {
+    throw new Error('El identificador de la entrada no es válido.')
+  }
+
+  const respuestaCsrf = await fetch('/api/v1/security/csrf', {
+    credentials: 'include',
+    cache: 'no-store',
+  })
+
+  await comprobar(respuestaCsrf)
+
+  const csrf = await respuestaCsrf.json()
+
+  if (!csrf.token || !csrf.headerName) {
+    throw new Error(
+      'No se pudo preparar la eliminación. Recarga la página.',
+    )
+  }
+
+  const response = await fetch(
+    `/api/v1/daily-entries/${encodeURIComponent(id)}/eliminar`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        [csrf.headerName]: csrf.token,
+      },
+    },
+  )
+
+  await comprobar(response)
+}

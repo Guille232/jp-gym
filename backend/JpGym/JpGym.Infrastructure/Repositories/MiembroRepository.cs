@@ -161,8 +161,8 @@ public class MiembroRepository : IMiembroRepository
     }
 
     public async Task<ResultadoEliminarMiembro> EliminarAsync(
-    Guid id,
-    CancellationToken cancellationToken = default)
+     Guid id,
+     CancellationToken cancellationToken = default)
     {
         var miembro = await _context.Miembros
             .SingleOrDefaultAsync(
@@ -174,38 +174,71 @@ public class MiembroRepository : IMiembroRepository
             return ResultadoEliminarMiembro.NoEncontrado;
         }
 
-        var tieneMembresias = await _context.Membresias
-            .AnyAsync(
-                membresia => membresia.MiembroId == id,
-                cancellationToken);
-
-        var tieneAsistencias = await _context.Asistencias
-            .AnyAsync(
-                asistencia => asistencia.MiembroId == id,
-                cancellationToken);
-
-        if (tieneMembresias || tieneAsistencias)
-        {
-            return ResultadoEliminarMiembro.TieneHistorial;
-        }
-
-        _context.Miembros.Remove(miembro);
+        // Iniciamos una transacción para asegurar que todo se borre o no se borre nada
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
+            // 1. Borrar Asistencias
+            var asistencias = await _context.Asistencias
+                .Where(a => a.MiembroId == id)
+                .ToListAsync(cancellationToken);
+
+            if (asistencias.Any())
+            {
+                _context.Asistencias.RemoveRange(asistencias);
+            }
+
+            // 2. Obtener las membresías del miembro
+            var membresias = await _context.Membresias
+                .Where(m => m.MiembroId == id)
+                .ToListAsync(cancellationToken);
+
+            if (membresias.Any())
+            {
+                var membresiaIds = membresias.Select(m => m.Id).ToList();
+
+                // 3. Obtener los pagos de esas membresías
+                var pagos = await _context.Pagos
+                    .Where(p => membresiaIds.Contains(p.MembresiaId))
+                    .ToListAsync(cancellationToken);
+
+                if (pagos.Any())
+                {
+                    var pagoIds = pagos.Select(p => p.Id).ToList();
+
+                    // 4. Borrar los comprobantes asociados a esos pagos
+                    var comprobantes = await _context.ComprobantesMembresia
+                        .Where(c => pagoIds.Contains(c.PagoId))
+                        .ToListAsync(cancellationToken);
+
+                    if (comprobantes.Any())
+                    {
+                        _context.ComprobantesMembresia.RemoveRange(comprobantes);
+                    }
+
+                    // 5. Borrar los pagos (Esto hace que el Dashboard reste el dinero automáticamente)
+                    _context.Pagos.RemoveRange(pagos);
+                }
+
+                // 6. Borrar las membresías
+                _context.Membresias.RemoveRange(membresias);
+            }
+
+            // 7. Finalmente, borrar al miembro
+            _context.Miembros.Remove(miembro);
+
+            // Guardar cambios y confirmar la transacción
             await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             return ResultadoEliminarMiembro.Eliminado;
         }
-        catch (DbUpdateException exception)
-            when (exception.InnerException is SqlException sqlException
-                && sqlException.Number == 547)
+        catch (Exception)
         {
-            // Una relación pudo agregarse después de la comprobación.
-            // Las claves foráneas impiden borrar el miembro.
-            _context.Entry(miembro).State = EntityState.Unchanged;
-
-            return ResultadoEliminarMiembro.TieneHistorial;
+            // Si algo falla (ej. un error en SQL), se deshace todo y el miembro sigue intacto
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
         }
     }
 

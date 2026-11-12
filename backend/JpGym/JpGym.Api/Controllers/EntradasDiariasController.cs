@@ -123,16 +123,66 @@ public class EntradasDiariasController : ControllerBase
         }
     }
 
+    [HttpPost("{id}/eliminar")]
+    [Authorize(Policy = "SoloAdministrador")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Eliminar(
+        [FromRoute] string id,
+        [FromServices] EliminarEntradaDiaria eliminarEntradaDiaria,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(id, out var guidId))
+        {
+            return BadRequest(new
+            {
+                mensaje = "El formato del ID no es válido."
+            });
+        }
+
+        try
+        {
+            var eliminado = await eliminarEntradaDiaria.EjecutarAsync(
+                guidId,
+                cancellationToken);
+
+            if (!eliminado)
+            {
+                return NotFound(new
+                {
+                    mensaje = "La entrada diaria no existe."
+                });
+            }
+
+            return Ok(new
+            {
+                mensaje = "Entrada eliminada correctamente."
+            });
+        }
+        catch (ValidationException exception)
+        {
+            ModelState.AddModelError(
+                string.Empty,
+                exception.Message);
+
+            return ValidationProblem(ModelState);
+        }
+    }
+
     private static bool EsInterbloqueo(Exception exception)
     {
         for (Exception? actual = exception;
              actual is not null;
              actual = actual.InnerException)
         {
-            if (actual is SqlException sqlException
-                && sqlException.Number == 1205)
+            if (actual is SqlException sqlException)
             {
-                return true;
+                foreach (SqlError error in sqlException.Errors)
+                {
+                    if (error.Number == 1205)
+                    {
+                        return true;
+                    }
+                }
             }
         }
 

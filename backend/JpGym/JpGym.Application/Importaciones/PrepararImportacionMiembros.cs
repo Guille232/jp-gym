@@ -203,15 +203,16 @@ public class PrepararImportacionMiembros
                     "No existe un plan activo con ese nombre. "
                     + "Selecciona o configura el plan correspondiente.");
             }
-            else if (coincidencias.Length > 1)
-            {
-                errores.Add(
-                    "Hay varios planes activos con ese nombre. "
-                    + "Corrige la ambigüedad antes de importar.");
-            }
             else
             {
-                var plan = coincidencias[0];
+                // Buscamos el primer plan que coincida con el nombre y el precio exacto
+                var plan = coincidencias.FirstOrDefault(p => p.Precio == fila.MontoPlan);
+
+                // Si no hay ninguno con ese precio, tomamos el primero que coincida por nombre
+                if (plan == null)
+                {
+                    plan = coincidencias.First();
+                }
 
                 planId = plan.Id;
 
